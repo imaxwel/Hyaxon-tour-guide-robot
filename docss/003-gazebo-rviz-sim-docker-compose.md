@@ -17,10 +17,11 @@
 
 当前仓库状态：
 
-- 仓库里没有现成 Dockerfile、Compose 文件或 devcontainer 配置。
-- 仓库已有 `src/tourbot_bringup/launch/sim.launch.py`，用于包装 TurtleBot4 Gazebo bringup，并启用 Nav2/RViz。
+- 仓库已有 `docker_stuff/sim/Dockerfile` 和 `docker_stuff/compose.sim.yaml`，用于在 Ubuntu 22.04 宿主上运行 Ubuntu 24.04 + ROS 2 Jazzy + Gazebo Harmonic 仿真容器。
+- 仓库已有 `src/tourbot_bringup/launch/sim.launch.py`，用于启动 TurtleBot4 Gazebo、spawn/bridge/RViz、AMCL localization 和 Nav2。
 - 自定义 `cardboard_city` world 还不完整。
-- `sim.launch.py` 默认 custom world 指向 `cardboard_city.sdf`，但仓库实际文件是 `world.sdf`。Docker 环境不会自动修复这个问题，启动自定义 world 时仍要显式传参或修改 launch 文件。
+- `sim.launch.py` 当前已修正 custom world 默认值，指向仓库实际存在的 `worlds/cardboard_city/world.sdf` 的 stem：`worlds/cardboard_city/world`。
+- `sim.launch.py` 当前会自动发布 AMCL 初始位姿，避免启动后一直等待 `map -> odom`。
 
 推荐路线：
 
@@ -222,21 +223,22 @@ docker run --rm --gpus all nvidia/cuda:12.5.0-base-ubuntu22.04 nvidia-smi
 
 ```text
 .
-├── .dockerignore
-├── compose.sim.yaml
-├── compose.nvidia.yaml          # 可选，仅 NVIDIA 主机使用
-└── .docker/
-    ├── .xauth                   # 本机生成，不提交
-    └── sim/
-        ├── Dockerfile
-        └── entrypoint.bash
+├── docker_stuff/
+│   ├── .env                     # 本机生成，不提交
+│   ├── .xauth                   # 本机生成，不提交
+│   ├── compose.sim.yaml
+│   ├── setup-host.bash
+│   └── sim/
+│       ├── Dockerfile
+│       └── entrypoint.bash
+└── .dockerignore
 ```
 
 建议把这些本机文件加入 `.gitignore`：
 
 ```text
-.env
-.docker/.xauth
+docker_stuff/.env
+docker_stuff/.xauth
 ```
 
 当前仓库 `.gitignore` 已经忽略：
@@ -254,7 +256,7 @@ log/
 路径：
 
 ```text
-.docker/sim/Dockerfile
+docker_stuff/sim/Dockerfile
 ```
 
 推荐内容：
@@ -332,7 +334,7 @@ RUN if ! getent group "${GID}" >/dev/null; then groupadd --gid "${GID}" "${USERN
 
 RUN rosdep init || true
 
-COPY .docker/sim/entrypoint.bash /usr/local/bin/tourbot-entrypoint
+COPY docker_stuff/sim/entrypoint.bash /usr/local/bin/tourbot-entrypoint
 RUN chmod +x /usr/local/bin/tourbot-entrypoint
 
 USER ${USERNAME}
@@ -356,7 +358,7 @@ CMD ["bash"]
 路径：
 
 ```text
-.docker/sim/entrypoint.bash
+docker_stuff/sim/entrypoint.bash
 ```
 
 推荐内容：
@@ -399,8 +401,8 @@ install
 log
 __pycache__
 *.pyc
-.docker/.xauth
-.env
+docker_stuff/.xauth
+docker_stuff/.env
 ```
 
 虽然开发镜像不 COPY 整个源码，Docker 仍会把 build context 发送给 Docker daemon。`.dockerignore` 可以避免 context 过大。
@@ -410,7 +412,7 @@ __pycache__
 路径：
 
 ```text
-compose.sim.yaml
+docker_stuff/compose.sim.yaml
 ```
 
 推荐内容：
@@ -421,13 +423,13 @@ name: tourbot-sim
 services:
   sim:
     build:
-      context: .
-      dockerfile: .docker/sim/Dockerfile
+      context: ..
+      dockerfile: docker_stuff/sim/Dockerfile
       args:
         USERNAME: ${USERNAME:-ros}
         UID: ${UID:-1000}
         GID: ${GID:-1000}
-    image: tourbot-sim:jazzy
+    image: tourbot-sim:jazzy-cpu
     container_name: tourbot-sim
     network_mode: host
     ipc: host
@@ -444,9 +446,9 @@ services:
       RMW_IMPLEMENTATION: ${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}
       GZ_SIM_RESOURCE_PATH: /workspace/src/tourbot_bringup/worlds
     volumes:
-      - .:/workspace:rw
+      - ..:/workspace:rw
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
-      - .docker/.xauth:/tmp/.docker.xauth:ro
+      - ./.xauth:/tmp/.docker.xauth:ro
       - gz-cache:/home/${USERNAME:-ros}/.gz
       - ros-cache:/home/${USERNAME:-ros}/.ros
     devices:
@@ -474,7 +476,7 @@ volumes:
 路径：
 
 ```text
-compose.nvidia.yaml
+docker_stuff/compose.nvidia.yaml
 ```
 
 推荐内容：
@@ -498,7 +500,10 @@ services:
 启动 NVIDIA 模式时使用两个 Compose 文件：
 
 ```bash
-docker compose --env-file .env -f compose.sim.yaml -f compose.nvidia.yaml up -d --build sim
+docker compose --env-file docker_stuff/.env \
+  -f docker_stuff/compose.sim.yaml \
+  -f docker_stuff/compose.nvidia.yaml \
+  up -d --build sim
 ```
 
 混合显卡笔记本如果 Gazebo/RViz 没走独显，可临时增加：
@@ -510,7 +515,7 @@ docker compose --env-file .env -f compose.sim.yaml -f compose.nvidia.yaml up -d 
 
 是否需要这些变量取决于宿主机驱动和桌面会话，不建议默认写死。
 
-## 11. 生成本机 `.env`
+## 11. 生成本机 `.env` 和 Xauthority
 
 在仓库根目录执行：
 
@@ -518,54 +523,32 @@ docker compose --env-file .env -f compose.sim.yaml -f compose.nvidia.yaml up -d 
 cd /home/imax/4sim/gh-ref/tour-guide-robot/Hyaxon-tour-guide-robot
 ```
 
-生成 `.env`：
+推荐直接使用仓库脚本：
 
 ```bash
-VIDEO_GID="$(getent group video | awk -F: '{print $3}')"
-RENDER_GID="$(getent group render | awk -F: '{print $3}')"
+chmod +x docker_stuff/setup-host.bash
+./docker_stuff/setup-host.bash
+```
 
-[ -n "$VIDEO_GID" ] || VIDEO_GID=44
-[ -n "$RENDER_GID" ] || RENDER_GID=109
+脚本会生成：
 
-cat > .env <<EOF
-USERNAME=$(id -un)
-UID=$(id -u)
-GID=$(id -g)
-DISPLAY=${DISPLAY}
-VIDEO_GID=${VIDEO_GID}
-RENDER_GID=${RENDER_GID}
-ROS_DOMAIN_ID=42
-RMW_IMPLEMENTATION=rmw_fastrtps_cpp
-EOF
+```text
+docker_stuff/.env
+docker_stuff/.xauth
 ```
 
 检查：
 
 ```bash
-cat .env
+cat docker_stuff/.env
+xauth -f docker_stuff/.xauth list
 ```
 
-不要把 `.env` 提交到 Git。它是本机配置。
+不要把 `docker_stuff/.env` 或 `docker_stuff/.xauth` 提交到 Git。它们是本机配置。
 
 ## 12. 配置 Xauthority
 
-推荐使用 Xauthority，而不是 `xhost +`。
-
-在仓库根目录执行：
-
-```bash
-mkdir -p .docker
-touch .docker/.xauth
-
-xauth nlist "$DISPLAY" | sed -e 's/^..../ffff/' | xauth -f .docker/.xauth nmerge -
-chmod 600 .docker/.xauth
-```
-
-检查：
-
-```bash
-xauth -f .docker/.xauth list
-```
+`docker_stuff/setup-host.bash` 已经会生成 `docker_stuff/.xauth`。推荐使用 Xauthority，而不是 `xhost +`。
 
 如果输出为空，说明当前会话的 Xauthority 不容易导出。可以临时使用受限 `xhost`：
 
@@ -590,25 +573,31 @@ xhost -SI:localuser:"$(id -un)"
 Intel/AMD 或基础模式：
 
 ```bash
-docker compose --env-file .env -f compose.sim.yaml build sim
+docker compose --env-file docker_stuff/.env -f docker_stuff/compose.sim.yaml build sim
 ```
 
 NVIDIA 模式：
 
 ```bash
-docker compose --env-file .env -f compose.sim.yaml -f compose.nvidia.yaml build sim
+docker compose --env-file docker_stuff/.env \
+  -f docker_stuff/compose.sim.yaml \
+  -f docker_stuff/compose.nvidia.yaml \
+  build sim
 ```
 
 验证 Compose 展开后的配置：
 
 ```bash
-docker compose --env-file .env -f compose.sim.yaml config
+docker compose --env-file docker_stuff/.env -f docker_stuff/compose.sim.yaml config
 ```
 
 如果使用 NVIDIA：
 
 ```bash
-docker compose --env-file .env -f compose.sim.yaml -f compose.nvidia.yaml config
+docker compose --env-file docker_stuff/.env \
+  -f docker_stuff/compose.sim.yaml \
+  -f docker_stuff/compose.nvidia.yaml \
+  config
 ```
 
 ## 14. 启动开发容器
@@ -616,25 +605,28 @@ docker compose --env-file .env -f compose.sim.yaml -f compose.nvidia.yaml config
 Intel/AMD 或基础模式：
 
 ```bash
-docker compose --env-file .env -f compose.sim.yaml up -d --build sim
+docker compose --env-file docker_stuff/.env -f docker_stuff/compose.sim.yaml up -d --build sim
 ```
 
 NVIDIA 模式：
 
 ```bash
-docker compose --env-file .env -f compose.sim.yaml -f compose.nvidia.yaml up -d --build sim
+docker compose --env-file docker_stuff/.env \
+  -f docker_stuff/compose.sim.yaml \
+  -f docker_stuff/compose.nvidia.yaml \
+  up -d --build sim
 ```
 
 进入容器：
 
 ```bash
-docker compose --env-file .env -f compose.sim.yaml exec sim bash
+docker compose --env-file docker_stuff/.env -f docker_stuff/compose.sim.yaml exec sim bash
 ```
 
 NVIDIA 模式进入容器也可以只用主 Compose 文件，因为容器已经创建完成：
 
 ```bash
-docker compose --env-file .env -f compose.sim.yaml exec sim bash
+docker compose --env-file docker_stuff/.env -f docker_stuff/compose.sim.yaml exec sim bash
 ```
 
 确认基础环境：
@@ -698,7 +690,7 @@ rosdep install --from-paths src --ignore-src -r -y --rosdistro jazzy
 构建：
 
 ```bash
-colcon build --symlink-install
+colcon build --packages-select tourbot_bringup --symlink-install
 ```
 
 source 当前 workspace：
@@ -729,9 +721,11 @@ ros2 launch tourbot_bringup sim.launch.py
 这个命令走 `use_custom_sim:=false`：
 
 - Gazebo 使用 TurtleBot4 官方默认 world。
+- 默认 TurtleBot4 model 是 `lite`，降低 Gazebo/RViz 资源压力。
 - TurtleBot4 仿真机器人会被启动。
-- Nav2 localization/navigation 会尝试启动。
+- Nav2 localization/navigation 会启动。
 - RViz 会启动。
+- 本工程会自动发布 `/initialpose`，避免 AMCL 一直等待初始位姿。
 
 启动后检查：
 
@@ -741,30 +735,44 @@ ros2 node list
 ros2 lifecycle nodes
 ```
 
+正常日志中应能看到：
+
+```text
+[tourbot_initial_pose_publisher]: Published initial pose x=0.000 y=0.000 yaw=0.000
+[amcl]: initialPoseReceived
+[lifecycle_manager_navigation]: Managed nodes are active
+```
+
 在 RViz 中：
 
 1. Fixed Frame 设为 `map`。
-2. 如果 AMCL 没有初始位姿，用 `2D Pose Estimate` 设置初始 pose。
+2. 默认 launch 会自动设置初始 pose；如果地图或出生点不匹配，再用 `2D Pose Estimate` 手动修正。
 3. 用 `Nav2 Goal` 发一个短距离目标。
 4. 观察 Gazebo 中机器人是否运动，RViz 中 path/costmap 是否更新。
 
+如果需要 OAK-D/RGBD 等 `standard` 模型传感器，显式传：
+
+```bash
+ros2 launch tourbot_bringup sim.launch.py model:=standard
+```
+
 ## 17. 运行工程自带 custom world
 
-当前不要直接运行：
+当前可以直接运行：
 
 ```bash
 ros2 launch tourbot_bringup sim.launch.py use_custom_sim:=true
 ```
 
-原因：`sim.launch.py` 默认查找 `worlds/cardboard_city/cardboard_city.sdf`，但仓库实际文件是：
+当前 `sim.launch.py` 默认 custom world 指向仓库实际文件的 stem：
 
 ```text
-src/tourbot_bringup/worlds/cardboard_city/world.sdf
+src/tourbot_bringup/worlds/cardboard_city/world
 ```
 
-临时方式是在容器内显式传入 world 和 map。
+TurtleBot4 Gazebo launch 会在内部追加 `.sdf`，因此这里传不带 `.sdf` 的路径。
 
-优先尝试 world stem：
+如果要显式传入 world 和 map，可以这样运行：
 
 ```bash
 cd /workspace
@@ -777,17 +785,6 @@ MAP_YAML="$(ros2 pkg prefix --share tourbot_bringup)/maps/cardboard_city/map_are
 ros2 launch tourbot_bringup sim.launch.py \
   use_custom_sim:=true \
   custom_world:="$WORLD_STEM" \
-  custom_map:="$MAP_YAML"
-```
-
-如果 TurtleBot4 launch 需要完整 `.sdf` 路径，改用：
-
-```bash
-WORLD_SDF="$(ros2 pkg prefix --share tourbot_bringup)/worlds/cardboard_city/world.sdf"
-
-ros2 launch tourbot_bringup sim.launch.py \
-  use_custom_sim:=true \
-  custom_world:="$WORLD_SDF" \
   custom_map:="$MAP_YAML"
 ```
 
@@ -816,7 +813,7 @@ mission 不是 Gazebo/RViz 的必要组成部分。只有在下面条件满足�
 
 ```bash
 cd /home/imax/4sim/gh-ref/tour-guide-robot/Hyaxon-tour-guide-robot
-docker compose --env-file .env -f compose.sim.yaml exec sim bash
+docker compose --env-file docker_stuff/.env -f docker_stuff/compose.sim.yaml exec sim bash
 ```
 
 容器内：
@@ -834,22 +831,19 @@ ros2 launch tourbot_bringup mission.launch.py
 
 CI、远程服务器或没有桌面的机器不建议启动 RViz/Gazebo GUI。
 
-当前 `tourbot_bringup/sim.launch.py` 写死传入：
+当前 `tourbot_bringup/sim.launch.py` 已暴露 `rviz`、`nav2`、`slam`、`localization` 等参数。
 
-```text
-rviz: true
+轻量验证时建议先关闭 RViz：
+
+```bash
+cd /workspace
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+
+ros2 launch tourbot_bringup sim.launch.py rviz:=false
 ```
 
-并且没有暴露 `headless` 参数。因此真正的 headless 最好先改 launch 文件，增加：
-
-- `rviz`
-- `headless`
-- `nav2`
-- `slam`
-- `localization`
-- `world`
-- `map`
-- `use_sim_time`
+这仍会启动 Gazebo GUI。当前工程还没有独立 `headless:=true` 参数；真正只跑 Gazebo server 仍建议绕过本工程 launch 或继续扩展 launch 文件。
 
 临时只跑 Gazebo server 可以绕过本工程 launch：
 
@@ -862,7 +856,7 @@ WORLD_SDF="$(ros2 pkg prefix --share tourbot_bringup)/worlds/cardboard_city/worl
 ros2 launch ros_gz_sim gz_server.launch.py world_sdf_file:="$WORLD_SDF"
 ```
 
-如果 TurtleBot4 官方 launch 支持 `rviz:=false` 或 `headless:=true`，可以按实际 `--show-args` 结果运行：
+如果只想验证 TurtleBot4 官方 launch 支持的参数，可以按实际 `--show-args` 结果运行；注意当前工程已经不再依赖官方顶层 wrapper 转发 Nav2 参数：
 
 ```bash
 ros2 launch turtlebot4_gz_bringup turtlebot4_gz.launch.py \
@@ -877,43 +871,61 @@ ros2 launch turtlebot4_gz_bringup turtlebot4_gz.launch.py \
 查看容器状态：
 
 ```bash
-docker compose --env-file .env -f compose.sim.yaml ps
+docker compose --env-file docker_stuff/.env \
+  -f docker_stuff/compose.sim.yaml \
+  ps
 ```
 
 进入容器：
 
 ```bash
-docker compose --env-file .env -f compose.sim.yaml exec sim bash
+docker compose --env-file docker_stuff/.env \
+  -f docker_stuff/compose.sim.yaml \
+  exec sim bash
+```
+
+启动或重建当前 sim 容器：
+
+```bash
+docker compose --env-file docker_stuff/.env \
+  -f docker_stuff/compose.sim.yaml \
+  up -d --force-recreate sim
 ```
 
 看日志：
 
 ```bash
-docker compose --env-file .env -f compose.sim.yaml logs -f sim
+docker compose --env-file docker_stuff/.env \
+  -f docker_stuff/compose.sim.yaml \
+  logs --tail=120 sim
+```
+
+```bash
+docker compose --env-file docker_stuff/.env -f docker_stuff/compose.sim.yaml logs -f sim
 ```
 
 停止容器但保留 image 和 volume：
 
 ```bash
-docker compose --env-file .env -f compose.sim.yaml stop sim
+docker compose --env-file docker_stuff/.env -f docker_stuff/compose.sim.yaml stop sim
 ```
 
 删除容器和默认网络，保留 named volumes：
 
 ```bash
-docker compose --env-file .env -f compose.sim.yaml down
+docker compose --env-file docker_stuff/.env -f docker_stuff/compose.sim.yaml down
 ```
 
 删除 Gazebo/ROS cache volumes：
 
 ```bash
-docker compose --env-file .env -f compose.sim.yaml down -v
+docker compose --env-file docker_stuff/.env -f docker_stuff/compose.sim.yaml down -v
 ```
 
 重建镜像：
 
 ```bash
-docker compose --env-file .env -f compose.sim.yaml build --no-cache sim
+docker compose --env-file docker_stuff/.env -f docker_stuff/compose.sim.yaml build --no-cache sim
 ```
 
 清理 dangling image：
@@ -1019,22 +1031,20 @@ echo "$ROS_DISTRO"
 ```bash
 echo "$DISPLAY"
 xauth list "$DISPLAY" || true
-ls -l .docker/.xauth
+ls -l docker_stuff/.xauth
 ```
 
 重新生成 xauth：
 
 ```bash
-touch .docker/.xauth
-xauth nlist "$DISPLAY" | sed -e 's/^..../ffff/' | xauth -f .docker/.xauth nmerge -
-chmod 600 .docker/.xauth
+./docker_stuff/setup-host.bash
 ```
 
 重新创建容器：
 
 ```bash
-docker compose --env-file .env -f compose.sim.yaml down
-docker compose --env-file .env -f compose.sim.yaml up -d sim
+docker compose --env-file docker_stuff/.env -f docker_stuff/compose.sim.yaml down
+docker compose --env-file docker_stuff/.env -f docker_stuff/compose.sim.yaml up -d sim
 ```
 
 仍失败时，临时使用受限 xhost：
@@ -1061,7 +1071,7 @@ Intel/AMD：
 
 NVIDIA：
 
-- 确认使用了 `compose.nvidia.yaml`。
+- 确认使用了 `docker_stuff/compose.nvidia.yaml`。
 - 确认宿主 `nvidia-smi` 正常。
 - 确认 Docker 的 `--gpus all` 验证通过。
 - 检查 `NVIDIA_DRIVER_CAPABILITIES` 是否包含 `graphics`。
@@ -1096,14 +1106,14 @@ https://fuel.gazebosim.org/1.0/OpenRobotics/models/Ground Plane
 GZ_SIM_RESOURCE_PATH=/workspace/src/tourbot_bringup/worlds:/workspace/models
 ```
 
-### 22.6 `cardboard_city.sdf` 找不到
+### 22.6 custom world 路径
 
-这是当前工程本身的问题，不是 Docker 问题。
+当前工程已经修正 `sim.launch.py` 默认 custom world 路径。
 
 当前默认：
 
 ```text
-worlds/cardboard_city/cardboard_city.sdf
+worlds/cardboard_city/world
 ```
 
 当前实际：
@@ -1114,8 +1124,8 @@ worlds/cardboard_city/world.sdf
 
 处理方式：
 
-- 临时：启动时显式传 `custom_world`。
-- 长期：修正 `src/tourbot_bringup/launch/sim.launch.py` 默认值，或重命名 SDF 文件。
+- 直接运行 `ros2 launch tourbot_bringup sim.launch.py use_custom_sim:=true`。
+- 如需自定义路径，传不带 `.sdf` 后缀的 `custom_world` stem。
 
 ### 22.7 容器内生成 root-owned 文件
 
@@ -1130,7 +1140,7 @@ sudo chown -R "$(id -u):$(id -g)" build install log
 然后检查 Compose `.env`：
 
 ```bash
-cat .env
+cat docker_stuff/.env
 ```
 
 确保 `UID` 和 `GID` 是当前用户。
@@ -1142,7 +1152,7 @@ cat .env
 - 不使用 `privileged: true`。
 - 不挂载 `/var/run/docker.sock`。
 - 不使用 `xhost +`。
-- 不把 `.env`、`.docker/.xauth` 提交到 Git。
+- 不把 `docker_stuff/.env`、`docker_stuff/.xauth` 提交到 Git。
 - 不在容器中存长期私钥或 token。
 - 容器内以普通用户运行。
 - GPU、X11、device 挂载只给仿真服务使用。
@@ -1162,7 +1172,7 @@ cat .env
 用于本地开发：
 
 - bind mount 源码
-- 容器内 `colcon build --symlink-install`
+- 容器内 `colcon build --packages-select tourbot_bringup --symlink-install`
 - 支持 Gazebo/RViz GUI
 - 支持 GPU
 - 可以 `docker compose exec` 多开终端调试
@@ -1204,42 +1214,19 @@ sudo apt-get install -y ca-certificates curl xauth x11-xserver-utils mesa-utils
 docker compose version
 ```
 
-生成本机 `.env`：
+生成本机 `.env` 和 Xauthority：
 
 ```bash
 cd /home/imax/4sim/gh-ref/tour-guide-robot/Hyaxon-tour-guide-robot
-
-VIDEO_GID="$(getent group video | awk -F: '{print $3}')"
-RENDER_GID="$(getent group render | awk -F: '{print $3}')"
-[ -n "$VIDEO_GID" ] || VIDEO_GID=44
-[ -n "$RENDER_GID" ] || RENDER_GID=109
-
-cat > .env <<EOF
-USERNAME=$(id -un)
-UID=$(id -u)
-GID=$(id -g)
-DISPLAY=${DISPLAY}
-VIDEO_GID=${VIDEO_GID}
-RENDER_GID=${RENDER_GID}
-ROS_DOMAIN_ID=42
-RMW_IMPLEMENTATION=rmw_fastrtps_cpp
-EOF
-```
-
-生成 Xauthority：
-
-```bash
-mkdir -p .docker
-touch .docker/.xauth
-xauth nlist "$DISPLAY" | sed -e 's/^..../ffff/' | xauth -f .docker/.xauth nmerge -
-chmod 600 .docker/.xauth
+chmod +x docker_stuff/setup-host.bash
+./docker_stuff/setup-host.bash
 ```
 
 启动容器：
 
 ```bash
-docker compose --env-file .env -f compose.sim.yaml up -d --build sim
-docker compose --env-file .env -f compose.sim.yaml exec sim bash
+docker compose --env-file docker_stuff/.env -f docker_stuff/compose.sim.yaml up -d --build sim
+docker compose --env-file docker_stuff/.env -f docker_stuff/compose.sim.yaml exec sim bash
 ```
 
 容器内构建工程：
@@ -1249,7 +1236,7 @@ cd /workspace
 source /opt/ros/jazzy/setup.bash
 rosdep update --rosdistro jazzy
 rosdep install --from-paths src --ignore-src -r -y --rosdistro jazzy
-colcon build --symlink-install
+colcon build --packages-select tourbot_bringup --symlink-install
 source install/setup.bash
 ```
 
@@ -1274,5 +1261,5 @@ ros2 launch tourbot_bringup sim.launch.py \
 停止：
 
 ```bash
-docker compose --env-file .env -f compose.sim.yaml down
+docker compose --env-file docker_stuff/.env -f docker_stuff/compose.sim.yaml down
 ```
