@@ -1,0 +1,57 @@
+name: tourbot-sim
+
+services:
+  sim:
+    build:
+      context: ..
+      dockerfile: docker_stuff/sim/Dockerfile
+      args:
+        USERNAME: ${USERNAME:-ros}
+        UID: ${UID:-1000}
+        GID: ${GID:-1000}
+        HTTP_PROXY: ${HTTP_PROXY:-}
+        HTTPS_PROXY: ${HTTPS_PROXY:-}
+        NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1,::1}
+        http_proxy: ${http_proxy:-}
+        https_proxy: ${https_proxy:-}
+        no_proxy: ${no_proxy:-localhost,127.0.0.1,::1}
+    image: tourbot-sim:jazzy-cpu
+    container_name: tourbot-sim
+    network_mode: host
+    ipc: host
+    shm_size: "2gb"
+    working_dir: /workspace
+    stdin_open: true
+    tty: true
+    environment:
+      DISPLAY: ${DISPLAY}
+      XAUTHORITY: /tmp/.docker.xauth
+      QT_X11_NO_MITSHM: "1"
+      XDG_RUNTIME_DIR: /tmp/runtime-${USERNAME:-ros}
+      ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-42}
+      RMW_IMPLEMENTATION: ${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}
+      HTTP_PROXY: ${HTTP_PROXY:-}
+      HTTPS_PROXY: ${HTTPS_PROXY:-}
+      NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1,::1}
+      http_proxy: ${http_proxy:-}
+      https_proxy: ${https_proxy:-}
+      no_proxy: ${no_proxy:-localhost,127.0.0.1,::1}
+      LIBGL_ALWAYS_SOFTWARE: ${LIBGL_ALWAYS_SOFTWARE:-0}
+      MESA_LOADER_DRIVER_OVERRIDE: ${MESA_LOADER_DRIVER_OVERRIDE:-iris}
+      GZ_SIM_RESOURCE_PATH: /workspace/src/tourbot_bringup/worlds
+    volumes:
+      - ..:/workspace:rw
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ./.xauth:/tmp/.docker.xauth:ro
+      - gz-cache:/home/${USERNAME:-ros}/.gz
+      - ros-cache:/home/${USERNAME:-ros}/.ros
+    devices:
+      - /dev/dri:/dev/dri
+    group_add:
+      - "${VIDEO_GID:-44}"
+      - "${RENDER_GID:-110}"
+    command: sleep infinity
+
+volumes:
+  gz-cache:
+  ros-cache:
