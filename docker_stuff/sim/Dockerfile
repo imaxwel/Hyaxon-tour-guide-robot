@@ -16,6 +16,8 @@ ARG http_proxy=
 ARG https_proxy=
 ARG no_proxy=localhost,127.0.0.1,::1
 
+ENV CYCLONEDDS_URI=file:///home/${USERNAME}/.cyclonedds.xml
+
 ENV HTTP_PROXY=${HTTP_PROXY}
 ENV HTTPS_PROXY=${HTTPS_PROXY}
 ENV NO_PROXY=${NO_PROXY}
@@ -85,10 +87,12 @@ RUN if ! getent group "${GID}" >/dev/null; then groupadd --gid "${GID}" "${USERN
     && mkdir -p "/home/${USERNAME}/.ros" "/home/${USERNAME}/.gz" "/tmp/runtime-${USERNAME}" \
     && printf '%s\n' \
          'source /opt/ros/jazzy/setup.bash' \
+         'export CYCLONEDDS_URI="${CYCLONEDDS_URI:-file://${HOME}/.cyclonedds.xml}"' \
          '[ -f /workspace/install/setup.bash ] && source /workspace/install/setup.bash' \
          >> "/home/${USERNAME}/.bashrc" \
     && printf '%s\n' \
          'source /opt/ros/jazzy/setup.bash' \
+         'export CYCLONEDDS_URI="${CYCLONEDDS_URI:-file://${HOME}/.cyclonedds.xml}"' \
          '[ -f /workspace/install/setup.bash ] && source /workspace/install/setup.bash' \
          > "/home/${USERNAME}/.bash_profile" \
     && chown -R "${UID}:${GID}" "/home/${USERNAME}" "/tmp/runtime-${USERNAME}"

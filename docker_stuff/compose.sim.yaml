@@ -30,6 +30,7 @@ services:
       XDG_RUNTIME_DIR: /tmp/runtime-${USERNAME:-ros}
       ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-42}
       RMW_IMPLEMENTATION: ${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}
+      CYCLONEDDS_URI: file:///home/${USERNAME:-ros}/.cyclonedds.xml
       HTTP_PROXY: ${HTTP_PROXY:-}
       HTTPS_PROXY: ${HTTPS_PROXY:-}
       NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1,::1}
