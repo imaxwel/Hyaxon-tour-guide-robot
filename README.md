@@ -258,7 +258,7 @@ To adapt the tour to a new environment, create a new map directory with a `map_a
 * Door state is simplified as tag visible = closed and tag removed = open.
 * AprilTag search currently uses a fixed rotation direction.
 * Human-following checks and battery-aware docking are planned but not fully implemented.
-* No custom Gazebo world was fully completed for the cardboard city environment.
+* The cardboard city Gazebo world currently contains static map-derived walls; richer 3D scene assets and AprilTag props still need to be authored.
 
 ## Future Improvements
 
@@ -267,7 +267,7 @@ To adapt the tour to a new environment, create a new map directory with a `map_a
 * Improve door-state detection beyond simple tag visibility.
 * Add stronger dynamic obstacle and human-awareness behavior and safety features.
 * Add battery-aware return-to-dock behavior.
-* Improve simulation support with a complete custom Gazebo world.
+* Add richer 3D simulation assets and AprilTag placements for the custom Gazebo world.
 
 ## License
 

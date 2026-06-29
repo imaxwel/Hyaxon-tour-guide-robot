@@ -1,27 +1,25 @@
+import os
+
+from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import IncludeLaunchDescription, TimerAction
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch_ros.actions import Node
-from ament_index_python.packages import get_package_share_directory
-import os
 
 
 def generate_launch_description():
-    '''Launches the navigation stack for the tourbot, 
-    including localization using a predefined map and RViz2 for visualization.
-    '''
+    """Launch the tourbot navigation stack."""
     # Path to predefined map
     map_yaml = os.path.join(
         get_package_share_directory('tourbot_bringup'),
         'maps',
         'cardboard_city',
-        'map_area.yaml'
+        'map_area.yaml',
     )
 
     nav2_params = os.path.join(
         get_package_share_directory('tourbot_bringup'),
         'config',
-        'nav2_params.yaml'
+        'nav2_params.yaml',
     )
 
     # Launch rviz2 in navigation mode
@@ -30,7 +28,7 @@ def generate_launch_description():
             os.path.join(
                 get_package_share_directory('turtlebot4_viz'),
                 'launch',
-                'view_navigation.launch.py'
+                'view_navigation.launch.py',
             )
         )
     )
@@ -41,41 +39,38 @@ def generate_launch_description():
             os.path.join(
                 get_package_share_directory('turtlebot4_navigation'),
                 'launch',
-                'localization.launch.py'
+                'localization.launch.py',
             )
         ),
         launch_arguments={
             'map': map_yaml,
-           # 'params_file': nav2_params,
-        }.items()
+            # 'params_file': nav2_params,
+        }.items(),
     )
 
-    
     nav2_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(
                 get_package_share_directory('turtlebot4_navigation'),
                 'launch',
-                'nav2.launch.py'
+                'nav2.launch.py',
             )
         ),
         launch_arguments={
             'params_file': nav2_params,
-        }.items()
+        }.items(),
     )
-    
 
     return LaunchDescription([
         localization_launch,
 
         TimerAction(
             period=5.0,
-            actions=[nav2_launch]
+            actions=[nav2_launch],
         ),
 
         TimerAction(
             period=7.0,
-            actions=[view_navigation_launch]
+            actions=[view_navigation_launch],
         ),
     ])
-

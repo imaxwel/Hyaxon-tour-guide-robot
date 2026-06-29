@@ -694,10 +694,10 @@ rosdep update --rosdistro jazzy
 安装工程依赖：
 
 ```bash
-rosdep install --from-paths src --ignore-src -r -y --rosdistro jazzy
+rosdep install --from-paths src --ignore-src -r -y --rosdistro jazzy -t buildtool -t build -t exec
 ```
 
-注意：当前 `tourbot_bringup/package.xml` 没有完整声明 TurtleBot4/Gazebo/Nav2 运行依赖，所以 Dockerfile 已经显式安装了这些关键包。`rosdep install` 成功不代表仿真依赖全部来自 package.xml。
+注意：这里跳过 test-only 依赖，避免 lint/test 包阻塞仿真容器依赖安装。Dockerfile 仍预装 TurtleBot4/Gazebo/Nav2 关键包，用于缩短首次启动时间。
 
 构建：
 
@@ -719,7 +719,7 @@ ros2 pkg prefix tourbot_bringup
 ros2 launch tourbot_bringup sim.launch.py --show-args
 ```
 
-## 16. 运行默认 TurtleBot4 Gazebo 仿真
+## 16. 运行默认项目 Gazebo 仿真
 
 容器内执行：
 
@@ -730,9 +730,9 @@ source install/setup.bash
 ros2 launch tourbot_bringup sim.launch.py
 ```
 
-这个命令走 `use_custom_sim:=false`：
+这个命令默认走 `use_custom_sim:=true`：
 
-- Gazebo 使用 TurtleBot4 官方默认 world。
+- Gazebo 使用项目自带 `cardboard_city` world。
 - 默认 TurtleBot4 model 是 `lite`，降低 Gazebo 资源压力。
 - TurtleBot4 仿真机器人会被启动。
 - 默认不启动 RViz。
@@ -1331,7 +1331,7 @@ docker compose --env-file docker_stuff/.env -f docker_stuff/compose.sim.yaml exe
 cd /workspace
 source /opt/ros/jazzy/setup.bash
 rosdep update --rosdistro jazzy
-rosdep install --from-paths src --ignore-src -r -y --rosdistro jazzy
+rosdep install --from-paths src --ignore-src -r -y --rosdistro jazzy -t buildtool -t build -t exec
 colcon build --packages-select tourbot_bringup --symlink-install
 source install/setup.bash
 ```

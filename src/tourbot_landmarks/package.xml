@@ -7,8 +7,6 @@
   <maintainer email="108911977+Hyaxon@users.noreply.github.com">hyde</maintainer>
   <license>MIT</license>
 
-  <buildtool_depend>ament_python</buildtool_depend>
-
   <exec_depend>ament_index_python</exec_depend>
   <exec_depend>python3-yaml</exec_depend>
 

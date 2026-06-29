@@ -55,13 +55,14 @@ cd /workspace
 source /opt/ros/jazzy/setup.bash
 rosdep update --rosdistro jazzy
 sudo apt-get update
-rosdep install --from-paths src --ignore-src -r -y --rosdistro jazzy --skip-keys="ament_python"
+rosdep install --from-paths src --ignore-src -r -y --rosdistro jazzy -t buildtool -t build -t exec
 colcon build --symlink-install
 source install/setup.bash
 ```
 
-`ament_python` is skipped because several local Python packages list it in
-`package.xml`, but rosdep does not resolve it as a system dependency on Jazzy.
+The `-t` flags install build and runtime dependencies while skipping test-only
+dependencies. This avoids pulling lint/test packages that are not required for
+the simulator container.
 
 ## Validate GUI and OpenGL
 
@@ -79,7 +80,9 @@ which is written to `docker_stuff/.env` by the setup script.
 
 ## Run simulation
 
-Default lightweight TurtleBot4 Gazebo simulation:
+Default lightweight project simulation. This starts Gazebo with the
+`cardboard_city` world, TurtleBot4, Gazebo bridges, and base robot nodes. It
+does not start RViz, AMCL, or Nav2 unless requested:
 
 ```bash
 ros2 launch tourbot_bringup sim.launch.py
@@ -91,7 +94,13 @@ Full navigation stack with RViz:
 ros2 launch tourbot_bringup sim.launch.py localization:=true nav2:=true rviz:=true
 ```
 
-Project custom world, using the current `world.sdf` filename:
+Use the upstream TurtleBot4 warehouse instead of the project world:
+
+```bash
+ros2 launch tourbot_bringup sim.launch.py use_custom_sim:=false
+```
+
+Override the project world or map paths when needed:
 
 ```bash
 WORLD_STEM="$(ros2 pkg prefix --share tourbot_bringup)/worlds/cardboard_city/world"

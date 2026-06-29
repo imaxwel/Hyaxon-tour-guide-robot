@@ -1,7 +1,7 @@
 import math
 
-import rclpy
 from geometry_msgs.msg import PoseWithCovarianceStamped
+import rclpy
 from rclpy.node import Node
 
 
@@ -22,7 +22,10 @@ class InitialPosePublisher(Node):
         self.remaining = int(self.get_parameter('count').value)
 
         self.pub = self.create_publisher(PoseWithCovarianceStamped, 'initialpose', 10)
-        self.timer = self.create_timer(float(self.get_parameter('period').value), self.publish_pose)
+        self.timer = self.create_timer(
+            float(self.get_parameter('period').value),
+            self.publish_pose,
+        )
 
     def publish_pose(self):
         if self.remaining <= 0:

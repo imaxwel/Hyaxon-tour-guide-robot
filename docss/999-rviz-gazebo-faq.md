@@ -1,16 +1,20 @@
 # RViz + Gazebo FAQ 和复发问题处理
 
-更新时间：2026-06-29
+更新时间：2026-06-30
 
 ## 1. 当前结论
 
-本工程默认启动已改成轻量模式：
+本工程默认启动已改成轻量的项目仿真模式：
 
 ```bash
 ros2 launch tourbot_bringup sim.launch.py
 ```
 
-默认只启动 Gazebo、TurtleBot4 robot、必要 bridge 和基础节点，不再默认启动 RViz、AMCL/localization 和完整 Nav2。
+默认会加载 `cardboard_city` Gazebo world、TurtleBot4 robot、必要 bridge 和基础节点，不再默认启动 RViz、AMCL/localization 和完整 Nav2。需要回到 TurtleBot4 官方 warehouse 时显式传：
+
+```bash
+ros2 launch tourbot_bringup sim.launch.py use_custom_sim:=false
+```
 
 完整导航需要显式打开：
 
@@ -46,7 +50,7 @@ xhost +SI:localuser:"$(id -un)"
 cd /workspace
 source /opt/ros/jazzy/setup.bash
 rosdep update --rosdistro jazzy
-rosdep install --from-paths src --ignore-src -r -y --rosdistro jazzy
+rosdep install --from-paths src --ignore-src -r -y --rosdistro jazzy -t buildtool -t build -t exec
 colcon build --packages-select tourbot_bringup --symlink-install
 source install/setup.bash
 ```
@@ -85,6 +89,8 @@ OpenGL renderer string: Mesa Intel(R) UHD Graphics
 ```
 
 说明 X11 和 OpenGL 硬件加速基本正常，Gazebo GUI 无响应通常不是 Docker 显卡权限坏了，而是负载过高。
+
+RViz 里能看到 AMCL/map 周围障碍，不代表 Gazebo 3D world 已经加载了同一套障碍。RViz 显示的是 Nav2/AMCL 使用的 2D 栅格地图；Gazebo 必须在 `world.sdf` 中有对应 3D collision/visual 实体，激光、碰撞和 GUI 才会看到同一个环境。
 
 完整导航会同时运行：
 

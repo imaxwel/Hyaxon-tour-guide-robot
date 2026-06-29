@@ -1,6 +1,7 @@
-from setuptools import find_packages, setup
-from pathlib import Path
 import os
+from pathlib import Path
+
+from setuptools import find_packages, setup
 
 package_name = 'tourbot_bringup'
 here = Path(__file__).resolve().parent

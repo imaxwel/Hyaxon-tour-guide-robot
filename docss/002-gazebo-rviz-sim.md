@@ -29,11 +29,11 @@
 
 当前需要注意的问题：
 
-- README 明确写了：`No custom Gazebo world was fully completed for the cardboard city environment.`
+- `cardboard_city` Gazebo world 现在包含从 `map_area.pgm` 生成的静态墙体，能和 Nav2/AMCL 的 2D map 对齐。
 - `sim.launch.py` 的 `custom_world` 默认值指向：
 
   ```text
-  worlds/cardboard_city/cardboard_city.sdf
+  worlds/cardboard_city/world
   ```
 
   但仓库里实际文件是：
@@ -173,10 +173,10 @@ tourbot_perception
 ```bash
 source /opt/ros/jazzy/setup.bash
 rosdep update
-rosdep install --from-paths src --ignore-src -r -y --rosdistro jazzy
+rosdep install --from-paths src --ignore-src -r -y --rosdistro jazzy -t buildtool -t build -t exec
 ```
 
-注意：因为 `tourbot_bringup/package.xml` 没有完整声明 TurtleBot4/Gazebo/Nav2 运行依赖，`rosdep` 成功不代表仿真依赖全部安装完毕。缺包时按第 3 节手动安装 TurtleBot4 simulator metapackage。
+注意：这里跳过 test-only 依赖，避免 lint/test 包阻塞仿真容器依赖安装。
 
 构建：
 
@@ -197,7 +197,7 @@ ros2 pkg prefix tourbot_bringup
 ros2 launch tourbot_bringup sim.launch.py --show-args
 ```
 
-## 6. 推荐启动方式 A：启动默认 TurtleBot4 Gazebo + Nav2 + RViz
+## 6. 推荐启动方式 A：启动默认项目 Gazebo 仿真
 
 这是当前工程最接近“一键仿真”的入口。
 
@@ -210,7 +210,7 @@ source install/setup.bash
 ros2 launch tourbot_bringup sim.launch.py
 ```
 
-这个命令会走 `use_custom_sim:=false`，也就是调用 TurtleBot4 官方默认 Gazebo world，并尝试打开 Nav2、localization 和 RViz。
+这个命令默认走 `use_custom_sim:=true`，也就是加载项目自带 `cardboard_city` Gazebo world。默认只启动 Gazebo、TurtleBot4、bridge 和基础节点；Nav2、localization 和 RViz 需要显式传参打开。
 
 等 Gazebo 和 RViz 打开后：
 
@@ -227,17 +227,15 @@ ros2 launch turtlebot4_gz_bringup turtlebot4_gz.launch.py nav2:=true slam:=false
 
 如果工程的 `sim.launch.py` 启动失败，但上面的官方命令能启动，优先检查 `tourbot_bringup/launch/sim.launch.py` 和你本机 TurtleBot4 包的 launch 参数是否匹配。
 
-## 7. 推荐启动方式 B：尝试使用工程自带 cardboard_city map/world
+## 7. 推荐启动方式 B：使用工程自带 cardboard_city map/world
 
-当前不建议直接执行：
+当前可以直接执行：
 
 ```bash
 ros2 launch tourbot_bringup sim.launch.py use_custom_sim:=true
 ```
 
-原因是 `sim.launch.py` 默认查找 `cardboard_city.sdf`，但仓库实际只有 `world.sdf`。
-
-可以先显式传入当前存在的 world 和 map。
+`sim.launch.py` 的默认 custom world stem 已指向 `worlds/cardboard_city/world`，SDF world name 使用 `cardboard_city`。
 
 终端 1：
 
@@ -444,7 +442,7 @@ sudo apt install ros-jazzy-turtlebot4-simulator ros-jazzy-irobot-create-nodes
 
 ### 10.2 `cardboard_city.sdf` 找不到
 
-原因：`sim.launch.py` 默认路径和仓库实际文件名不一致。
+历史原因：旧版 `sim.launch.py` 默认路径和仓库实际文件名不一致。当前默认值已修复为 `worlds/cardboard_city/world`。
 
 当前仓库实际文件：
 
@@ -452,9 +450,7 @@ sudo apt install ros-jazzy-turtlebot4-simulator ros-jazzy-irobot-create-nodes
 src/tourbot_bringup/worlds/cardboard_city/world.sdf
 ```
 
-临时处理：按第 7 节显式传 `custom_world`。
-
-长期处理：修改 `src/tourbot_bringup/launch/sim.launch.py` 的默认值，或者把 SDF 文件命名和 launch 默认值统一。
+如果再次出现类似错误，检查是否已重新 build 并 `source install/setup.bash`。
 
 ### 10.3 Gazebo 有机器人，RViz 没有 map 或机器人
 
@@ -669,8 +665,8 @@ ros2 run rqt_image_view rqt_image_view
 
 建议后续单独提交这些修正：
 
-1. 修正 `sim.launch.py` 的 `custom_world` 默认值。
-   - 当前默认：`worlds/cardboard_city/cardboard_city.sdf`
+1. 保持 `sim.launch.py` 的 `custom_world` stem 和 `world.sdf` 文件名一致。
+   - 当前默认：`worlds/cardboard_city/world`
    - 当前实际：`worlds/cardboard_city/world.sdf`
 
 2. 明确 TurtleBot4 `world` 参数期望。
@@ -749,4 +745,3 @@ source /opt/ros/jazzy/setup.bash
 source install/setup.bash
 ros2 launch tourbot_bringup mission.launch.py
 ```
-
