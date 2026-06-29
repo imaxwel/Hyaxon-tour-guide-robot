@@ -249,3 +249,85 @@ Lookup would require extrapolation into the past/future
 [amcl]: initialPoseReceived
 [lifecycle_manager_navigation]: Managed nodes are active
 ```
+## 8. 哪些提示可以忽略
+是的，你的理解非常准确！这份 `compose.sim.yaml` 实际上**已经把硬件加速和图形界面映射的配置写得很完善了**（甚至考虑到了 Intel 核显的 `iris` 驱动覆盖，以及 `XAUTHORITY` 的权限挂载）。
+
+既然配置文件没问题，但你之前仍然遇到了 `failed to create dri2 screen`（无法创建硬件渲染屏幕）以及 GUI 卡死，**核心原因就是宿主机（你的 Ubuntu 22.04 笔记本）上的环境变量或 X11 访问权限没有成功传递给容器。**
+
+为了让这份配置真正生效，你需要在启动 Docker 容器的**当前宿主机终端**执行以下操作：
+
+### 必须执行的 3 个环境准备步骤
+
+在运行 `docker compose up` 或 `docker compose exec` 之前，请在终端依次执行：
+
+**1. 确认并导出 DISPLAY 变量**
+虽然你是在图形界面的终端里操作，但有时候通过某些脚本或特定的 session 进入时，`DISPLAY` 变量可能没被 Docker Compose 捕获。
+
+```bash
+# 查看当前 DISPLAY 值，通常是 :0 或 :1
+echo $DISPLAY 
+
+# 如果上面的命令没有输出，强制指定它（根据实际情况通常是 :0 或 :1）
+export DISPLAY=:0
+# 或者
+export DISPLAY=:1
+
+```
+
+**2. 开放本地 X11 显示权限 (重点！)**
+由于 Docker 容器相当于一个独立的系统，宿主机的图形服务器（X11）默认会拒绝它的渲染请求。
+
+```bash
+xhost +local:root
+
+```
+
+*提示：看到 `non-network local connections being added to access control list` 就说明成功了。*
+
+**3. 检查 `.xauth` 文件陷阱（极容易踩坑）**
+你看配置里有一行：`- ./.xauth:/tmp/.docker.xauth:ro`。
+这是原作者试图用更安全的 Xauthority 机制来代替 `xhost`。**但是，如果你在宿主机的当前目录下没有提前创建一个叫 `.xauth` 的文件，Docker 在启动时会误以为你要挂载一个文件夹，从而自动创建一个名为 `.xauth` 的空文件夹！** 一旦挂载的是文件夹而不是文件，X11 权限验证就会彻底失败，导致 Gazebo 无法出图。
+
+* **检查方法**：在 `compose.sim.yaml` 所在的目录运行 `ls -la .xauth`。如果它显示为一个目录（以 `d` 开头），你需要删掉它，并创建一个空文件：
+```bash
+rm -rf .xauth
+touch .xauth
+
+```
+
+
+
+---
+
+### 解答你前一条日志中的疑惑
+
+结合这份完整的 yaml，前一条日志里的那个奇怪报错就真相大白了：
+
+> `groups: cannot find name for group ID 110`
+
+你看 yaml 文件里有：
+
+```yaml
+    group_add:
+      - "${VIDEO_GID:-44}"
+      - "${RENDER_GID:-110}"
+
+```
+
+这个 GID 110 就是 Ubuntu 宿主机上 `render` 用户组的 ID。把容器内的用户加入这个组，是为了让容器有权限读写 `/dev/dri/renderD128`（显卡渲染节点）。因为容器内部原本不存在 110 这个组名，所以系统抛出了那个 warning。**这是一个完全无害的警告**，说明配置生效了，权限已经加上了，请放心忽略。
+
+### 总结你的标准启动流程
+
+以后每次重启电脑后，如果你要运行这个仿真，最稳妥的命令组合是：
+
+```bash
+cd /workspace/src/tour-guide-robot/Hyaxon-tour-guide-robot  # 你的项目目录
+export DISPLAY=:0          # 或者 :1，取决于 echo $DISPLAY
+xhost +local:root          # 放行显示权限
+touch .xauth               # 确保 auth 文件存在而非目录
+docker compose --env-file docker_stuff/.env -f docker_stuff/compose.sim.yaml up -d
+docker compose --env-file docker_stuff/.env -f docker_stuff/compose.sim.yaml exec sim bash
+
+```
+
+进入容器后，再次运行你的 `ros2 launch tourbot_bringup sim.launch.py`，Gazebo 的 GUI 应该就能流畅且带有硬件加速地弹出来了。
