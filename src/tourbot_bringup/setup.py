@@ -82,6 +82,8 @@ setup(
         'test': ['pytest'],
     },
     entry_points={
-        'console_scripts': [],
+        'console_scripts': [
+            'initial_pose_publisher = tourbot_bringup.initial_pose_publisher:main',
+        ],
     },
 )

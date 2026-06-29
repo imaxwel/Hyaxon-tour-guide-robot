@@ -112,6 +112,28 @@ TurtleBot4 Gazebo launch 会给 `world` 参数追加 `.sdf`，所以默认 custo
 .../worlds/cardboard_city/world
 ```
 
+### 3.5 自动发布 AMCL 初始位姿
+
+仅启动 map_server/AMCL/Nav2 还不够。AMCL 没有初始位姿时不会稳定发布 `map -> odom`，Nav2 global_costmap 就会继续刷：
+
+```text
+Timed out waiting for transform from base_link to map
+Invalid frame ID "map"
+```
+
+本工程现在增加了 `tourbot_bringup/initial_pose_publisher`，`sim.launch.py` 会在启动后延迟发布多次 `/initialpose`，等价于自动在 RViz 中点一次 `2D Pose Estimate`。
+
+默认发布：
+
+```text
+frame_id: map
+x: 0.0
+y: 0.0
+yaw: 0.0
+```
+
+如果用 `x/y/yaw` 改机器人出生点，initial pose 会跟随同一组 launch 参数。
+
 ## 4. 推荐启动流程
 
 进入容器：
@@ -151,7 +173,7 @@ RViz 打开后：
 
 1. 等 Gazebo world 和 TurtleBot4 完全加载。
 2. 如果 Gazebo 暂停，点击 Play。
-3. 在 RViz 使用 `2D Pose Estimate` 设置机器人初始位姿。
+3. 默认 launch 会自动发布初始位姿；如果你修改了出生点或地图不匹配，再用 `2D Pose Estimate` 手动修正。
 4. 等 `map -> odom -> base_link` 稳定后再发 Nav2 goal。
 
 ## 5. 判断是否正常
@@ -209,12 +231,21 @@ ros2 launch tourbot_bringup sim.launch.py
 Timed out waiting for transform from base_link to map
 AMCL cannot publish a pose ... Please set the initial pose
 Message Filter dropping message ... queue is full
+Lookup would require extrapolation into the past/future
 ```
 
 前提是：
 
 1. `/map_server`、`/amcl`、Nav2 nodes 已经启动。
-2. RViz 里已经设置过 `2D Pose Estimate`。
+2. 日志里能看到 `tourbot_initial_pose_publisher` 发布 initial pose，或 RViz 里已经设置过 `2D Pose Estimate`。
 3. 之后 `map -> odom -> base_link` 能稳定出现。
 
 如果设置初始位姿后仍持续刷 `map` 不存在，再检查 map_server lifecycle、`/map` topic 和 `/scan` 是否正常。
+
+正常自动初始位姿日志类似：
+
+```text
+[initial_pose_publisher]: Published initial pose x=0.000 y=0.000 yaw=0.000
+[amcl]: initialPoseReceived
+[lifecycle_manager_navigation]: Managed nodes are active
+```

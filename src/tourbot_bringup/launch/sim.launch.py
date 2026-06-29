@@ -1,8 +1,9 @@
 from launch import LaunchDescription
-from launch.actions import IncludeLaunchDescription, DeclareLaunchArgument, GroupAction
+from launch.actions import IncludeLaunchDescription, DeclareLaunchArgument, GroupAction, TimerAction
 from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, PythonExpression
+from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 
 
@@ -21,6 +22,7 @@ def generate_launch_description():
     model = LaunchConfiguration('model')
     custom_world = LaunchConfiguration('custom_world')
     custom_map = LaunchConfiguration('custom_map')
+    localization_params = LaunchConfiguration('localization_params')
     x = LaunchConfiguration('x')
     y = LaunchConfiguration('y')
     z = LaunchConfiguration('z')
@@ -118,6 +120,7 @@ def generate_launch_description():
                 'maps',
                 'warehouse.yaml',
             ]),
+            'params': localization_params,
         }.items(),
     )
 
@@ -130,6 +133,7 @@ def generate_launch_description():
             'namespace': namespace,
             'use_sim_time': use_sim_time,
             'map': custom_map,
+            'params': localization_params,
         }.items(),
     )
 
@@ -149,6 +153,26 @@ def generate_launch_description():
             'namespace': namespace,
             'use_sim_time': use_sim_time,
         }.items(),
+    )
+
+    initial_pose_publisher = TimerAction(
+        period=12.0,
+        actions=[
+            Node(
+                package='tourbot_bringup',
+                executable='initial_pose_publisher',
+                output='screen',
+                parameters=[{
+                    'frame_id': 'map',
+                    'x': x,
+                    'y': y,
+                    'yaw': yaw,
+                    'period': 1.0,
+                    'count': 20,
+                }],
+                condition=IfCondition(localization),
+            )
+        ],
     )
 
     return LaunchDescription([
@@ -222,6 +246,16 @@ def generate_launch_description():
             description='Custom Nav2 map YAML path',
         ),
 
+        DeclareLaunchArgument(
+            'localization_params',
+            default_value=PathJoinSubstitution([
+                tourbot_bringup,
+                'config',
+                'sim_localization.yaml',
+            ]),
+            description='AMCL localization parameters for simulation',
+        ),
+
         DeclareLaunchArgument('x', default_value='0.0', description='Robot spawn x'),
         DeclareLaunchArgument('y', default_value='0.0', description='Robot spawn y'),
         DeclareLaunchArgument('z', default_value='0.0', description='Robot spawn z'),
@@ -234,4 +268,5 @@ def generate_launch_description():
         custom_localization,
         slam_node,
         nav2_node,
+        initial_pose_publisher,
     ])
