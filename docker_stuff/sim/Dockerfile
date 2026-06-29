@@ -23,7 +23,7 @@ ENV http_proxy=${http_proxy}
 ENV https_proxy=${https_proxy}
 ENV no_proxy=${no_proxy}
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     bash-completion \
     build-essential \
     ca-certificates \
@@ -64,6 +64,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-jazzy-slam-toolbox \
     ros-jazzy-tf2-tools \
     ros-jazzy-turtlebot4-simulator \
+    ros-jazzy-diagnostic-updater \
     && rm -rf /var/lib/apt/lists/*
 
 RUN if ! getent group "${GID}" >/dev/null; then groupadd --gid "${GID}" "${USERNAME}"; fi \
