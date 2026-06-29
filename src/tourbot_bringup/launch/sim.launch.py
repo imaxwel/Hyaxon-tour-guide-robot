@@ -190,13 +190,13 @@ def generate_launch_description():
 
         DeclareLaunchArgument(
             'rviz',
-            default_value='true',
+            default_value='false',
             description='Launch RViz navigation view',
         ),
 
         DeclareLaunchArgument(
             'localization',
-            default_value='true',
+            default_value='false',
             description='Launch AMCL localization',
         ),
 
@@ -208,7 +208,7 @@ def generate_launch_description():
 
         DeclareLaunchArgument(
             'nav2',
-            default_value='true',
+            default_value='false',
             description='Launch Nav2 navigation stack',
         ),
 

@@ -33,8 +33,16 @@ xhost +SI:localuser:"$(id -un)"
 
 ## Build and start
 
+First run, or after changing the Dockerfile / image dependencies:
+
 ```bash
 docker compose --env-file docker_stuff/.env -f docker_stuff/compose.sim.yaml up -d --build sim
+```
+
+Normal daily start after the image already exists:
+
+```bash
+docker compose --env-file docker_stuff/.env -f docker_stuff/compose.sim.yaml up -d sim
 docker compose --env-file docker_stuff/.env -f docker_stuff/compose.sim.yaml exec sim bash
 ```
 
@@ -71,10 +79,16 @@ which is written to `docker_stuff/.env` by the setup script.
 
 ## Run simulation
 
-Default TurtleBot4 simulation:
+Default lightweight TurtleBot4 Gazebo simulation:
 
 ```bash
 ros2 launch tourbot_bringup sim.launch.py
+```
+
+Full navigation stack with RViz:
+
+```bash
+ros2 launch tourbot_bringup sim.launch.py localization:=true nav2:=true rviz:=true
 ```
 
 Project custom world, using the current `world.sdf` filename:
@@ -86,7 +100,10 @@ MAP_YAML="$(ros2 pkg prefix --share tourbot_bringup)/maps/cardboard_city/map_are
 ros2 launch tourbot_bringup sim.launch.py \
   use_custom_sim:=true \
   custom_world:="$WORLD_STEM" \
-  custom_map:="$MAP_YAML"
+  custom_map:="$MAP_YAML" \
+  localization:=true \
+  nav2:=true \
+  rviz:=true
 ```
 
 ## Stop

@@ -602,10 +602,22 @@ docker compose --env-file docker_stuff/.env \
 
 ## 14. 启动开发容器
 
-Intel/AMD 或基础模式：
+首次启动或 Dockerfile 改动后，使用 `--build`：
 
 ```bash
 docker compose --env-file docker_stuff/.env -f docker_stuff/compose.sim.yaml up -d --build sim
+```
+
+日常已经构建过镜像后，直接启动容器，不需要 `--build`：
+
+```bash
+docker compose --env-file docker_stuff/.env -f docker_stuff/compose.sim.yaml up -d sim
+```
+
+如果容器已经存在但只是停止了，可以用：
+
+```bash
+docker compose --env-file docker_stuff/.env -f docker_stuff/compose.sim.yaml start sim
 ```
 
 NVIDIA 模式：
@@ -707,7 +719,7 @@ ros2 pkg prefix tourbot_bringup
 ros2 launch tourbot_bringup sim.launch.py --show-args
 ```
 
-## 16. 运行默认 TurtleBot4 Gazebo + RViz 仿真
+## 16. 运行默认 TurtleBot4 Gazebo 仿真
 
 容器内执行：
 
@@ -721,18 +733,40 @@ ros2 launch tourbot_bringup sim.launch.py
 这个命令走 `use_custom_sim:=false`：
 
 - Gazebo 使用 TurtleBot4 官方默认 world。
-- 默认 TurtleBot4 model 是 `lite`，降低 Gazebo/RViz 资源压力。
+- 默认 TurtleBot4 model 是 `lite`，降低 Gazebo 资源压力。
 - TurtleBot4 仿真机器人会被启动。
-- Nav2 localization/navigation 会启动。
-- RViz 会启动。
-- 本工程会自动发布 `/initialpose`，避免 AMCL 一直等待初始位姿。
+- 默认不启动 RViz。
+- 默认不启动 AMCL/localization。
+- 默认不启动 Nav2。
+
+这样设计是为了避免在笔记本上一条命令同时启动 Gazebo GUI、RViz、AMCL、完整 Nav2 lifecycle nodes 和多路传感器 bridge，导致桌面把 Gazebo 判定为“没有响应”。先确认 Gazebo/robot 稳定，再按需打开导航。
 
 启动后检查：
 
 ```bash
-ros2 topic list | grep -E "/clock|/tf|/odom|/scan|/map"
+ros2 topic list | grep -E "/clock|/tf|/odom|/scan"
 ros2 node list
-ros2 lifecycle nodes
+```
+
+如果只需要验证 Gazebo GUI，不要在同一个容器里重复启动第二个 `ros2 launch tourbot_bringup sim.launch.py`。需要重新启动时，先在原终端 Ctrl+C；如果停不干净，重启容器：
+
+```bash
+docker compose --env-file docker_stuff/.env -f docker_stuff/compose.sim.yaml restart sim
+```
+
+## 17. 运行完整 Nav2 + RViz 仿真
+
+确认默认 Gazebo 仿真稳定后，再显式打开 localization、Nav2 和 RViz：
+
+```bash
+cd /workspace
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+
+ros2 launch tourbot_bringup sim.launch.py \
+  localization:=true \
+  nav2:=true \
+  rviz:=true
 ```
 
 正常日志中应能看到：
@@ -743,20 +777,27 @@ ros2 lifecycle nodes
 [lifecycle_manager_navigation]: Managed nodes are active
 ```
 
-在 RViz 中：
+RViz 可能打印：
 
-1. Fixed Frame 设为 `map`。
-2. 默认 launch 会自动设置初始 pose；如果地图或出生点不匹配，再用 `2D Pose Estimate` 手动修正。
-3. 用 `Nav2 Goal` 发一个短距离目标。
-4. 观察 Gazebo 中机器人是否运动，RViz 中 path/costmap 是否更新。
+```text
+Waiting for the slam_toolbox node configuration
+```
+
+只要你没有传 `slam:=true`，这通常是 TurtleBot4 RViz navigation 配置里的面板提示，不代表必须启动 SLAM，也不是 Gazebo GUI 无响应的根因。
+
+在低功耗笔记本上，如果 Gazebo 或 RViz 明显卡顿，优先关闭 RViz：
+
+```bash
+ros2 launch tourbot_bringup sim.launch.py localization:=true nav2:=true rviz:=false
+```
 
 如果需要 OAK-D/RGBD 等 `standard` 模型传感器，显式传：
 
 ```bash
-ros2 launch tourbot_bringup sim.launch.py model:=standard
+ros2 launch tourbot_bringup sim.launch.py model:=standard localization:=true nav2:=true rviz:=true
 ```
 
-## 17. 运行工程自带 custom world
+## 18. 运行工程自带 custom world
 
 当前可以直接运行：
 
@@ -785,7 +826,10 @@ MAP_YAML="$(ros2 pkg prefix --share tourbot_bringup)/maps/cardboard_city/map_are
 ros2 launch tourbot_bringup sim.launch.py \
   use_custom_sim:=true \
   custom_world:="$WORLD_STEM" \
-  custom_map:="$MAP_YAML"
+  custom_map:="$MAP_YAML" \
+  localization:=true \
+  nav2:=true \
+  rviz:=true
 ```
 
 如果仍失败，先单独验证 SDF：
@@ -797,7 +841,7 @@ ros2 launch ros_gz_sim gz_sim.launch.py gz_args:="$WORLD_SDF -r -v 4"
 
 这只验证 Gazebo world，不会自动 spawn TurtleBot4，也不会启动 Nav2/RViz。
 
-## 18. 运行 mission
+## 19. 运行 mission
 
 mission 不是 Gazebo/RViz 的必要组成部分。只有在下面条件满足时再启动：
 
@@ -827,20 +871,20 @@ ros2 launch tourbot_bringup mission.launch.py
 
 当前自定义 world 没有完整 AprilTag 场景，所以 `mission.launch.py` 更适合作为节点集成测试入口，不代表完整导览仿真已经闭环。
 
-## 19. Headless 模式建议
+## 20. Headless 模式建议
 
 CI、远程服务器或没有桌面的机器不建议启动 RViz/Gazebo GUI。
 
-当前 `tourbot_bringup/sim.launch.py` 已暴露 `rviz`、`nav2`、`slam`、`localization` 等参数。
+当前 `tourbot_bringup/sim.launch.py` 已暴露 `rviz`、`nav2`、`slam`、`localization` 等参数，并且默认关闭 RViz/Nav2/localization。
 
-轻量验证时建议先关闭 RViz：
+轻量验证直接运行默认命令：
 
 ```bash
 cd /workspace
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
 
-ros2 launch tourbot_bringup sim.launch.py rviz:=false
+ros2 launch tourbot_bringup sim.launch.py
 ```
 
 这仍会启动 Gazebo GUI。当前工程还没有独立 `headless:=true` 参数；真正只跑 Gazebo server 仍建议绕过本工程 launch 或继续扩展 launch 文件。
@@ -866,7 +910,7 @@ ros2 launch turtlebot4_gz_bringup turtlebot4_gz.launch.py \
   rviz:=false
 ```
 
-## 20. 常用 Compose 命令
+## 21. 常用 Compose 命令
 
 查看容器状态：
 
@@ -884,7 +928,15 @@ docker compose --env-file docker_stuff/.env \
   exec sim bash
 ```
 
-启动或重建当前 sim 容器：
+日常启动当前 sim 容器：
+
+```bash
+docker compose --env-file docker_stuff/.env \
+  -f docker_stuff/compose.sim.yaml \
+  up -d sim
+```
+
+强制重建当前 sim 容器，但不重建镜像：
 
 ```bash
 docker compose --env-file docker_stuff/.env \
@@ -934,9 +986,9 @@ docker compose --env-file docker_stuff/.env -f docker_stuff/compose.sim.yaml bui
 docker image prune
 ```
 
-## 21. 验证清单
+## 22. 验证清单
 
-### 21.1 宿主机
+### 22.1 宿主机
 
 ```bash
 docker compose version
@@ -946,7 +998,7 @@ ls -ld /dev/dri || true
 nvidia-smi || true
 ```
 
-### 21.2 容器基础环境
+### 22.2 容器基础环境
 
 ```bash
 echo "$ROS_DISTRO"
@@ -957,7 +1009,7 @@ ros2 pkg prefix turtlebot4_navigation
 ros2 pkg prefix turtlebot4_viz
 ```
 
-### 21.3 GUI 和 GPU
+### 22.3 GUI 和 GPU
 
 ```bash
 xeyes
@@ -967,7 +1019,7 @@ rviz2
 
 `rviz2` 能打开但界面报 TF/map 错误是正常的，因为还没有启动机器人和 Nav2。这里主要验证 GUI 能显示。
 
-### 21.4 ROS/Gazebo topic
+### 22.4 ROS/Gazebo topic
 
 仿真启动后：
 
@@ -977,7 +1029,7 @@ ros2 topic list | grep -E "/tf|/tf_static|/odom|/scan|/map|/cmd_vel"
 ros2 topic hz /scan
 ```
 
-### 21.5 Nav2 lifecycle
+### 22.5 Nav2 lifecycle
 
 ```bash
 ros2 lifecycle nodes
@@ -987,7 +1039,7 @@ ros2 lifecycle get /planner_server
 ros2 lifecycle get /amcl
 ```
 
-### 21.6 TF
+### 22.6 TF
 
 ```bash
 ros2 run tf2_tools view_frames
@@ -999,9 +1051,9 @@ ros2 run tf2_tools view_frames
 map -> odom -> base_link -> sensors
 ```
 
-## 22. 常见问题和处理
+## 23. 常见问题和处理
 
-### 22.1 `Package 'turtlebot4_gz_bringup' not found`
+### 23.1 `Package 'turtlebot4_gz_bringup' not found`
 
 容器内检查：
 
@@ -1024,7 +1076,7 @@ cat /etc/os-release
 echo "$ROS_DISTRO"
 ```
 
-### 22.2 `cannot open display`
+### 23.2 `cannot open display`
 
 宿主机检查：
 
@@ -1053,7 +1105,7 @@ docker compose --env-file docker_stuff/.env -f docker_stuff/compose.sim.yaml up 
 xhost +SI:localuser:"$(id -un)"
 ```
 
-### 22.3 RViz/Gazebo 打开但黑屏或软件渲染很慢
+### 23.3 RViz/Gazebo 打开但黑屏或软件渲染很慢
 
 容器内检查：
 
@@ -1076,7 +1128,7 @@ NVIDIA：
 - 确认 Docker 的 `--gpus all` 验证通过。
 - 检查 `NVIDIA_DRIVER_CAPABILITIES` 是否包含 `graphics`。
 
-### 22.4 DDS 发现不到节点
+### 23.4 DDS 发现不到节点
 
 本方案使用 `network_mode: host`，通常不会遇到 Docker bridge 网络导致的 ROS 2 discovery 问题。
 
@@ -1090,7 +1142,7 @@ ros2 node list
 
 确保所有终端、容器和宿主 ROS 工具使用相同 `ROS_DOMAIN_ID`。如果宿主机也装了 ROS，不要 source 不同发行版去连同一个 domain。
 
-### 22.5 Gazebo 从 Fuel 下载模型很慢
+### 23.5 Gazebo 从 Fuel 下载模型很慢
 
 工程的 `world.sdf` 使用了 Gazebo Fuel 的 Ground Plane：
 
@@ -1106,7 +1158,7 @@ https://fuel.gazebosim.org/1.0/OpenRobotics/models/Ground Plane
 GZ_SIM_RESOURCE_PATH=/workspace/src/tourbot_bringup/worlds:/workspace/models
 ```
 
-### 22.6 custom world 路径
+### 23.6 custom world 路径
 
 当前工程已经修正 `sim.launch.py` 默认 custom world 路径。
 
@@ -1127,7 +1179,45 @@ worlds/cardboard_city/world.sdf
 - 直接运行 `ros2 launch tourbot_bringup sim.launch.py use_custom_sim:=true`。
 - 如需自定义路径，传不带 `.sdf` 后缀的 `custom_world` stem。
 
-### 22.7 容器内生成 root-owned 文件
+### 23.7 Gazebo GUI 显示“没有响应”
+
+先区分两类问题。
+
+如果 `glxinfo -B` 失败、`xeyes` 打不开，优先按 `cannot open display` 和 OpenGL 小节处理。
+
+如果 `glxinfo -B` 显示 `direct rendering: Yes` 且 renderer 是 Intel/AMD/NVIDIA，但 Gazebo 仍然假死，通常是负载过高：Gazebo GUI、RViz、AMCL、Nav2 lifecycle nodes、RGBD/LiDAR/IR bridge 同时运行会让笔记本 CPU 持续满载。
+
+先清理旧 launch：
+
+```bash
+docker compose --env-file docker_stuff/.env -f docker_stuff/compose.sim.yaml restart sim
+```
+
+然后只跑默认轻量仿真：
+
+```bash
+docker compose --env-file docker_stuff/.env -f docker_stuff/compose.sim.yaml exec sim bash
+cd /workspace
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+ros2 launch tourbot_bringup sim.launch.py
+```
+
+确认稳定后再显式打开完整导航：
+
+```bash
+ros2 launch tourbot_bringup sim.launch.py localization:=true nav2:=true rviz:=true
+```
+
+如果完整导航一开就卡，使用无 RViz 导航：
+
+```bash
+ros2 launch tourbot_bringup sim.launch.py localization:=true nav2:=true rviz:=false
+```
+
+不要同时开多个 `ros2 launch tourbot_bringup sim.launch.py`。这会重复启动 Gazebo、bridge、AMCL 和 Nav2，是最常见的复发原因。
+
+### 23.8 容器内生成 root-owned 文件
 
 本方案通过 Dockerfile 创建与宿主 UID/GID 相同的用户，正常不会产生 root-owned `build/ install/ log/`。
 
@@ -1145,7 +1235,7 @@ cat docker_stuff/.env
 
 确保 `UID` 和 `GID` 是当前用户。
 
-## 23. 安全建议
+## 24. 安全建议
 
 推荐：
 
@@ -1222,10 +1312,16 @@ chmod +x docker_stuff/setup-host.bash
 ./docker_stuff/setup-host.bash
 ```
 
-启动容器：
+首次启动或镜像依赖改变后：
 
 ```bash
 docker compose --env-file docker_stuff/.env -f docker_stuff/compose.sim.yaml up -d --build sim
+```
+
+日常启动容器：
+
+```bash
+docker compose --env-file docker_stuff/.env -f docker_stuff/compose.sim.yaml up -d sim
 docker compose --env-file docker_stuff/.env -f docker_stuff/compose.sim.yaml exec sim bash
 ```
 
@@ -1255,7 +1351,10 @@ MAP_YAML="$(ros2 pkg prefix --share tourbot_bringup)/maps/cardboard_city/map_are
 ros2 launch tourbot_bringup sim.launch.py \
   use_custom_sim:=true \
   custom_world:="$WORLD_STEM" \
-  custom_map:="$MAP_YAML"
+  custom_map:="$MAP_YAML" \
+  localization:=true \
+  nav2:=true \
+  rviz:=true
 ```
 
 停止：
