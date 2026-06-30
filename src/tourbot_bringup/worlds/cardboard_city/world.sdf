@@ -1,4 +1,4 @@
-<sdf version="1.8">
+<sdf version="1.9">
     <world name="world_demo">
         <!-- Provides physics engine for interactions with objects -->
         <physics name="1ms" type="ode">
@@ -72,7 +72,7 @@
 
                 <play_pause>true</play_pause>
                 <step>true</step>
-                <start_paused>true</start_paused>
+                <start_paused>false</start_paused>
                 <service>/world/world_demo/control</service>
                 <stats_topic>/world/world_demo/stats</stats_topic>
             </plugin>
@@ -148,7 +148,212 @@
             <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Ground Plane</uri>
         </include>
 
-        <!-- These walls establish the location of the simulation based on the project -->
-        
+        <!--
+            Cardboard city fixtures.
+
+            Landmark poses are treated as robot observation poses from
+            tourbot_landmarks/config/cardboard_city/landmarks.yaml. Each tag is
+            mounted about 45 cm in front of that observation pose, with the tag
+            face normal pointing back toward the robot. The tag model side
+            length is 0.162 m, matching tourbot_perception/config/apriltags_36h11.yaml.
+
+            The cardboard panels below are visual landmarks only. They are left
+            without collisions so the open-loop door traversal action can be
+            demonstrated reliably while still giving Gazebo users a readable
+            door / box scene.
+        -->
+
+        <model name="cardboard_city_visual_walls">
+            <static>true</static>
+            <link name="link">
+                <visual name="north_wall">
+                    <pose>1.8 1.05 0.25 0 0 0</pose>
+                    <geometry>
+                        <box>
+                            <size>4.4 0.05 0.50</size>
+                        </box>
+                    </geometry>
+                    <material>
+                        <ambient>0.62 0.46 0.27 1</ambient>
+                        <diffuse>0.62 0.46 0.27 1</diffuse>
+                    </material>
+                </visual>
+                <visual name="south_wall">
+                    <pose>1.8 -1.05 0.25 0 0 0</pose>
+                    <geometry>
+                        <box>
+                            <size>4.4 0.05 0.50</size>
+                        </box>
+                    </geometry>
+                    <material>
+                        <ambient>0.62 0.46 0.27 1</ambient>
+                        <diffuse>0.62 0.46 0.27 1</diffuse>
+                    </material>
+                </visual>
+                <visual name="west_wall">
+                    <pose>-0.35 0 0.25 0 0 0</pose>
+                    <geometry>
+                        <box>
+                            <size>0.05 2.1 0.50</size>
+                        </box>
+                    </geometry>
+                    <material>
+                        <ambient>0.62 0.46 0.27 1</ambient>
+                        <diffuse>0.62 0.46 0.27 1</diffuse>
+                    </material>
+                </visual>
+                <visual name="east_wall">
+                    <pose>4.05 0 0.25 0 0 0</pose>
+                    <geometry>
+                        <box>
+                            <size>0.05 2.1 0.50</size>
+                        </box>
+                    </geometry>
+                    <material>
+                        <ambient>0.62 0.46 0.27 1</ambient>
+                        <diffuse>0.62 0.46 0.27 1</diffuse>
+                    </material>
+                </visual>
+            </link>
+        </model>
+
+        <model name="cardboard_city_door_and_box_panels">
+            <static>true</static>
+            <link name="link">
+                <visual name="door_outward_closed_marker_panel">
+                    <pose>3.14 -0.53 0.42 0 0 0</pose>
+                    <geometry>
+                        <box>
+                            <size>0.72 0.035 0.84</size>
+                        </box>
+                    </geometry>
+                    <material>
+                        <ambient>0.72 0.54 0.31 1</ambient>
+                        <diffuse>0.72 0.54 0.31 1</diffuse>
+                    </material>
+                </visual>
+                <visual name="door_inward_closed_marker_panel">
+                    <pose>1.71 0.53 0.42 0 0 0</pose>
+                    <geometry>
+                        <box>
+                            <size>0.72 0.035 0.84</size>
+                        </box>
+                    </geometry>
+                    <material>
+                        <ambient>0.72 0.54 0.31 1</ambient>
+                        <diffuse>0.72 0.54 0.31 1</diffuse>
+                    </material>
+                </visual>
+                <visual name="box_goal_3">
+                    <pose>0.45 0.495 0.25 0 0 0</pose>
+                    <geometry>
+                        <box>
+                            <size>0.08 0.42 0.50</size>
+                        </box>
+                    </geometry>
+                    <material>
+                        <ambient>0.66 0.48 0.26 1</ambient>
+                        <diffuse>0.66 0.48 0.26 1</diffuse>
+                    </material>
+                </visual>
+                <visual name="box_goal_4">
+                    <pose>1.84 -0.2 0.25 0 0 0</pose>
+                    <geometry>
+                        <box>
+                            <size>0.08 0.42 0.50</size>
+                        </box>
+                    </geometry>
+                    <material>
+                        <ambient>0.66 0.48 0.26 1</ambient>
+                        <diffuse>0.66 0.48 0.26 1</diffuse>
+                    </material>
+                </visual>
+                <visual name="box_goal_5">
+                    <pose>3.87 -0.2 0.25 0 0 0</pose>
+                    <geometry>
+                        <box>
+                            <size>0.08 0.42 0.50</size>
+                        </box>
+                    </geometry>
+                    <material>
+                        <ambient>0.66 0.48 0.26 1</ambient>
+                        <diffuse>0.66 0.48 0.26 1</diffuse>
+                    </material>
+                </visual>
+                <visual name="box_goal_6">
+                    <pose>1.83 -0.647 0.25 0 0 0</pose>
+                    <geometry>
+                        <box>
+                            <size>0.08 0.42 0.50</size>
+                        </box>
+                    </geometry>
+                    <material>
+                        <ambient>0.66 0.48 0.26 1</ambient>
+                        <diffuse>0.66 0.48 0.26 1</diffuse>
+                    </material>
+                </visual>
+                <visual name="box_goal_7">
+                    <pose>2.86 0.673 0.25 0 0 0</pose>
+                    <geometry>
+                        <box>
+                            <size>0.08 0.42 0.50</size>
+                        </box>
+                    </geometry>
+                    <material>
+                        <ambient>0.66 0.48 0.26 1</ambient>
+                        <diffuse>0.66 0.48 0.26 1</diffuse>
+                    </material>
+                </visual>
+            </link>
+        </model>
+
+        <include>
+            <name>apriltag_home_0</name>
+            <uri>model://tag36_11_00000</uri>
+            <pose>0 0.45 0.45 0 1.5708 -1.5708</pose>
+        </include>
+
+        <include>
+            <name>apriltag_door_outward_1</name>
+            <uri>model://tag36_11_00001</uri>
+            <pose>3.14 -0.45 0.45 0 1.5708 1.5708</pose>
+        </include>
+
+        <include>
+            <name>apriltag_door_inward_2</name>
+            <uri>model://tag36_11_00002</uri>
+            <pose>1.71 0.45 0.45 0 1.5708 -1.5708</pose>
+        </include>
+
+        <include>
+            <name>apriltag_goal_3</name>
+            <uri>model://tag36_11_00003</uri>
+            <pose>0.492 0.495 0.45 0 1.5708 0</pose>
+        </include>
+
+        <include>
+            <name>apriltag_goal_4</name>
+            <uri>model://tag36_11_00004</uri>
+            <pose>1.78 -0.2 0.45 0 1.5708 3.1416</pose>
+        </include>
+
+        <include>
+            <name>apriltag_goal_5</name>
+            <uri>model://tag36_11_00005</uri>
+            <pose>3.81 -0.2 0.45 0 1.5708 3.1416</pose>
+        </include>
+
+        <include>
+            <name>apriltag_goal_6</name>
+            <uri>model://tag36_11_00006</uri>
+            <pose>1.89 -0.647 0.45 0 1.5708 0</pose>
+        </include>
+
+        <include>
+            <name>apriltag_goal_7</name>
+            <uri>model://tag36_11_00007</uri>
+            <pose>2.80 0.673 0.45 0 1.5708 3.1416</pose>
+        </include>
+
     </world>
 </sdf>
