@@ -40,6 +40,20 @@ if config_root.exists():
             )
             data_files.append((install_dir, [str(path.relative_to(here))]))
 
+# Gazebo GUI files, preserving subdirectories
+gui_root = here / 'gui'
+if gui_root.exists():
+    for path in gui_root.rglob('*'):
+        if path.is_file():
+            rel_parent = path.parent.relative_to(gui_root)
+            install_dir = os.path.join(
+                'share',
+                package_name,
+                'gui',
+                str(rel_parent),
+            )
+            data_files.append((install_dir, [str(path.relative_to(here))]))
+
 # Map files, preserving subdirectories
 maps_root = here / 'maps'
 if maps_root.exists():

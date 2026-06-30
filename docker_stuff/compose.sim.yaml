@@ -37,9 +37,11 @@ services:
       http_proxy: ${http_proxy:-}
       https_proxy: ${https_proxy:-}
       no_proxy: ${no_proxy:-localhost,127.0.0.1,::1}
-      LIBGL_ALWAYS_SOFTWARE: ${LIBGL_ALWAYS_SOFTWARE:-0}
-      MESA_LOADER_DRIVER_OVERRIDE: ${MESA_LOADER_DRIVER_OVERRIDE:-iris}
-      GZ_SIM_RESOURCE_PATH: /workspace/src/tourbot_bringup/worlds
+      LIBGL_ALWAYS_SOFTWARE: ${LIBGL_ALWAYS_SOFTWARE:-1}
+      MESA_LOADER_DRIVER_OVERRIDE: ${MESA_LOADER_DRIVER_OVERRIDE:-llvmpipe}
+      GZ_SIM_RESOURCE_PATH: /workspace/src/tourbot_bringup/worlds:/opt/ros/jazzy/share/turtlebot4_gz_bringup/worlds:/opt/ros/jazzy/share/irobot_create_gz_bringup/worlds:/opt/ros/jazzy/share:/opt/ros/jazzy/share/turtlebot4_description/..:/opt/ros/jazzy/share/irobot_create_description/..
+      GZ_SIM_SYSTEM_PLUGIN_PATH: /opt/ros/jazzy/lib
+      GZ_GUI_PLUGIN_PATH: /opt/ros/jazzy/lib
     volumes:
       - ..:/workspace:rw
       - /tmp/.X11-unix:/tmp/.X11-unix:rw

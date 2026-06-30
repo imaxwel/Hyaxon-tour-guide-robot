@@ -2,7 +2,7 @@
 <sdf version='1.8'>
   <world name='cardboard_city'>
     <physics name='1ms' type='ode'>
-      <max_step_size>0.003</max_step_size>
+      <max_step_size>0.001</max_step_size>
       <real_time_update_rate>1000</real_time_update_rate>
       <real_time_factor>1.0</real_time_factor>
     </physics>
@@ -10,9 +10,6 @@
     <plugin filename='gz-sim-user-commands-system' name='gz::sim::systems::UserCommands'/>
     <plugin filename='gz-sim-scene-broadcaster-system' name='gz::sim::systems::SceneBroadcaster'/>
     <plugin filename='gz-sim-contact-system' name='gz::sim::systems::Contact'/>
-    <plugin filename='gz-sim-sensors-system' name='gz::sim::systems::Sensors'>
-      <render_engine>ogre2</render_engine>
-    </plugin>
     <plugin filename='gz-sim-imu-system' name='gz::sim::systems::Imu'/>
 
     <scene>
@@ -29,7 +26,7 @@
           <property key='state' type='string'>docked</property>
           <property key='showTitleBar' type='bool'>false</property>
         </gz-gui>
-        <engine>ogre2</engine>
+        <engine>ogre</engine>
         <scene>scene</scene>
         <ambient_light>0.78 0.78 0.78</ambient_light>
         <background_color>0.86 0.89 0.92</background_color>

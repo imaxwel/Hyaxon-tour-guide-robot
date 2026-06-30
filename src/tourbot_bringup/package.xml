@@ -12,15 +12,21 @@
   <exec_depend>ros2launch</exec_depend>
   <exec_depend>geometry_msgs</exec_depend>
   <exec_depend>rclpy</exec_depend>
+  <exec_depend>controller_manager</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
   <exec_depend>ros_gz_bridge</exec_depend>
   <exec_depend>ros_gz_sim</exec_depend>
+  <exec_depend>irobot_create_common_bringup</exec_depend>
+  <exec_depend>irobot_create_control</exec_depend>
   <exec_depend>irobot_create_description</exec_depend>
   <exec_depend>irobot_create_gz_bringup</exec_depend>
   <exec_depend>irobot_create_gz_plugins</exec_depend>
+  <exec_depend>irobot_create_nodes</exec_depend>
   <exec_depend>turtlebot4_description</exec_depend>
   <exec_depend>turtlebot4_gz_bringup</exec_depend>
   <exec_depend>turtlebot4_gz_gui_plugins</exec_depend>
   <exec_depend>turtlebot4_navigation</exec_depend>
+  <exec_depend>turtlebot4_viz</exec_depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>

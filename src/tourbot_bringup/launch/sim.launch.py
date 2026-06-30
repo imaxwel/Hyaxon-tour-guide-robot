@@ -1,9 +1,9 @@
 from launch import LaunchDescription
 from launch.actions import (
+    AppendEnvironmentVariable,
     DeclareLaunchArgument,
     GroupAction,
     IncludeLaunchDescription,
-    SetEnvironmentVariable,
     TimerAction,
 )
 from launch.conditions import IfCondition, UnlessCondition
@@ -32,6 +32,7 @@ def generate_launch_description():
     slam = LaunchConfiguration('slam')
     nav2 = LaunchConfiguration('nav2')
     model = LaunchConfiguration('model')
+    gazebo_gui = LaunchConfiguration('gazebo_gui')
     custom_world = LaunchConfiguration('custom_world')
     custom_world_name = LaunchConfiguration('custom_world_name')
     custom_map = LaunchConfiguration('custom_map')
@@ -60,6 +61,13 @@ def generate_launch_description():
             turtlebot4_gz_bringup,
             'launch',
             'turtlebot4_spawn.launch.py',
+        ])
+    )
+    tour_spawn_launch = PythonLaunchDescriptionSource(
+        PathJoinSubstitution([
+            tourbot_bringup,
+            'launch',
+            'turtlebot4_tour_spawn.launch.py',
         ])
     )
     localization_launch = PythonLaunchDescriptionSource(
@@ -94,7 +102,7 @@ def generate_launch_description():
         }.items(),
     )
 
-    custom_gz_resource_path = SetEnvironmentVariable(
+    custom_gz_resource_path = AppendEnvironmentVariable(
         name='GZ_SIM_RESOURCE_PATH',
         value=[
             PathJoinSubstitution([tourbot_bringup, 'worlds']),
@@ -107,16 +115,20 @@ def generate_launch_description():
             ':',
             PathJoinSubstitution([irobot_create_description, '..']),
         ],
+        separator=':',
+        prepend=True,
         condition=IfCondition(use_custom_sim),
     )
 
-    custom_gz_gui_plugin_path = SetEnvironmentVariable(
+    custom_gz_gui_plugin_path = AppendEnvironmentVariable(
         name='GZ_GUI_PLUGIN_PATH',
         value=[
             PathJoinSubstitution([turtlebot4_gz_gui_plugins, 'lib']),
             ':',
             PathJoinSubstitution([irobot_create_gz_plugins, 'lib']),
         ],
+        separator=':',
+        prepend=True,
         condition=IfCondition(use_custom_sim),
     )
 
@@ -128,16 +140,38 @@ def generate_launch_description():
                 custom_world,
                 '.sdf',
                 ' -r',
+                ' -s',
                 ' -v 4',
-                ' --gui-config ',
-                PathJoinSubstitution([
-                    turtlebot4_gz_bringup,
-                    'gui',
-                    model,
-                    'gui.config',
-                ]),
+                ' --headless-rendering',
+                ' --render-engine-server ogre',
             ],
         }.items(),
+    )
+
+    custom_gazebo_gui = TimerAction(
+        period=3.0,
+        actions=[
+            IncludeLaunchDescription(
+                ros_gz_sim_launch,
+                condition=IfCondition(PythonExpression([
+                    "'", use_custom_sim, "' == 'true' and '", gazebo_gui, "' == 'true'"
+                ])),
+                launch_arguments={
+                    'gz_args': [
+                        ' -g',
+                        ' -v 4',
+                        ' --render-engine-gui ogre',
+                        ' --gui-config ',
+                        PathJoinSubstitution([
+                            tourbot_bringup,
+                            'gui',
+                            'cardboard_city',
+                            'gui.config',
+                        ]),
+                    ],
+                }.items(),
+            )
+        ],
     )
 
     custom_clock_bridge = Node(
@@ -151,36 +185,56 @@ def generate_launch_description():
         condition=IfCondition(use_custom_sim),
     )
 
-    def make_spawn(world_name, condition):
+    def make_spawn(spawn_source, world_name, condition, extra_arguments=None):
+        launch_arguments = {
+            'namespace': namespace,
+            'use_sim_time': use_sim_time,
+            'rviz': rviz,
+            'model': model,
+            'x': x,
+            'y': y,
+            'z': z,
+            'yaw': yaw,
+            # Keep this as the SDF world name, not the world file path.
+            'world': world_name,
+            # Navigation is launched explicitly below so map/custom_map is forwarded.
+            'localization': 'false',
+            'slam': 'false',
+            'nav2': 'false',
+        }
+        if extra_arguments is not None:
+            launch_arguments.update(extra_arguments)
+
         return GroupAction(
             scoped=True,
             condition=condition,
             actions=[
                 IncludeLaunchDescription(
-                    spawn_launch,
-                    launch_arguments={
-                        'namespace': namespace,
-                        'use_sim_time': use_sim_time,
-                        'rviz': rviz,
-                        'model': model,
-                        'x': x,
-                        'y': y,
-                        'z': z,
-                        'yaw': yaw,
-                        # Consumed by turtlebot4_gz_bringup/ros_gz_bridge.launch.py.
-                        # Keep this as the SDF world name, not the world file path.
-                        'world': world_name,
-                        # Navigation is launched explicitly below so map/custom_map is forwarded.
-                        'localization': 'false',
-                        'slam': 'false',
-                        'nav2': 'false',
-                    }.items(),
+                    spawn_source,
+                    launch_arguments=launch_arguments.items(),
                 )
             ],
         )
 
-    default_spawn = make_spawn('warehouse', UnlessCondition(use_custom_sim))
-    custom_spawn = make_spawn(custom_world_name, IfCondition(use_custom_sim))
+    default_spawn = make_spawn(
+        spawn_launch,
+        'warehouse',
+        UnlessCondition(use_custom_sim),
+    )
+    custom_spawn = make_spawn(
+        tour_spawn_launch,
+        custom_world_name,
+        IfCondition(use_custom_sim),
+        {
+            'controller_manager_timeout': LaunchConfiguration('controller_manager_timeout'),
+            'controller_service_call_timeout': LaunchConfiguration(
+                'controller_service_call_timeout'
+            ),
+            'controller_switch_timeout': LaunchConfiguration('controller_switch_timeout'),
+            'controller_start_delay': LaunchConfiguration('controller_start_delay'),
+            'robot_nodes_start_delay': LaunchConfiguration('robot_nodes_start_delay'),
+        },
+    )
 
     default_localization = IncludeLaunchDescription(
         localization_launch,
@@ -292,6 +346,11 @@ def generate_launch_description():
             default_value='lite',
             description='TurtleBot4 model: standard or lite',
         ),
+        DeclareLaunchArgument(
+            'gazebo_gui',
+            default_value='true',
+            description='Launch Gazebo GUI as a separate client for custom simulation',
+        ),
 
         DeclareLaunchArgument(
             'use_custom_sim',
@@ -341,11 +400,37 @@ def generate_launch_description():
         DeclareLaunchArgument('y', default_value='0.0', description='Robot spawn y'),
         DeclareLaunchArgument('z', default_value='0.0', description='Robot spawn z'),
         DeclareLaunchArgument('yaw', default_value='0.0', description='Robot spawn yaw'),
+        DeclareLaunchArgument(
+            'controller_manager_timeout',
+            default_value='90',
+            description='Seconds to wait for ros2_control controller manager services',
+        ),
+        DeclareLaunchArgument(
+            'controller_service_call_timeout',
+            default_value='45',
+            description='Seconds to wait for each ros2_control service call response',
+        ),
+        DeclareLaunchArgument(
+            'controller_switch_timeout',
+            default_value='45',
+            description='Seconds to allow controller activation in Gazebo',
+        ),
+        DeclareLaunchArgument(
+            'controller_start_delay',
+            default_value='10.0',
+            description='Seconds to wait after robot spawn before loading controllers',
+        ),
+        DeclareLaunchArgument(
+            'robot_nodes_start_delay',
+            default_value='18.0',
+            description='Seconds to wait after robot spawn before starting bridges and nodes',
+        ),
 
         default_gazebo,
         custom_gz_resource_path,
         custom_gz_gui_plugin_path,
         custom_gazebo,
+        custom_gazebo_gui,
         custom_clock_bridge,
         default_spawn,
         custom_spawn,
