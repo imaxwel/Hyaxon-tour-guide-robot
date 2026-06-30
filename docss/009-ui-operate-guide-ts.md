@@ -247,9 +247,82 @@ ros2 action info /navigate_to_pose
 ros2 lifecycle get /bt_navigator
 ros2 topic echo --once /cmd_vel_nav
 ros2 topic echo --once /cmd_vel
+ros2 topic echo --once /diffdrive_controller/cmd_vel
 ```
 
-若 `/cmd_vel_nav` 有速度但 `/cmd_vel` 没有，查 velocity smoother / bridge。若两者都有但 Gazebo 不动，查 Gazebo 是否暂停、diffdrive controller 是否正常。
+正常速度链路是：
+
+```text
+controller_server
+  -> /cmd_vel_nav
+  -> velocity_smoother
+  -> /cmd_vel_smoothed
+  -> collision_monitor
+  -> /cmd_vel
+  -> motion_control
+  -> /diffdrive_controller/cmd_vel
+  -> cmd_vel_bridge
+  -> Gazebo /model/turtlebot4/cmd_vel
+  -> diffdrive_controller
+```
+
+若 `/cmd_vel_nav` 有速度但 `/cmd_vel_smoothed` 没有，查 `velocity_smoother`。  
+若 `/cmd_vel_smoothed` 有速度但 `/cmd_vel` 没有，查 `collision_monitor`。  
+若 `/cmd_vel` 有速度但 `/diffdrive_controller/cmd_vel` 没有，查 `motion_control`。  
+若 `/diffdrive_controller/cmd_vel` 有速度但 Gazebo 不动，查 Gazebo 是否暂停、diffdrive controller 是否拒收命令。
+
+查看 Gazebo diffdrive 是否拒收旧命令：
+
+```bash
+docker logs --tail 300 hyaxon-tour-guide-robot-sim-1 2>&1 | grep 'diffdrive_controller'
+```
+
+如果出现：
+
+```text
+Ignoring the received message ... because it is older than the current time ... exceeds the allowed timeout (0.5000)
+```
+
+含义是速度命令已经到 Gazebo，但 `TwistStamped.header.stamp` 太旧，Gazebo 差速控制器按安全策略拒收。这通常发生在：
+
+- goal 刚开始或 recovery 刚结束时，链路上还残留上一条 0 速度命令；
+- controller 触发 `Failed to make progress`，BT 做清 costmap / recovery，速度链短暂停顿；
+- 系统负载较高，Nav2 控制循环或 bridge 有延迟。
+
+判断命令时间戳是否新鲜：
+
+```bash
+echo CLOCK
+timeout 5 ros2 topic echo --qos-reliability best_effort --once /clock
+echo CMD_NAV
+timeout 5 ros2 topic echo --once /cmd_vel_nav
+echo CMD_SMOOTH
+timeout 5 ros2 topic echo --once /cmd_vel_smoothed
+echo CMD
+timeout 5 ros2 topic echo --once /cmd_vel
+echo DIFFDRIVE
+timeout 5 ros2 topic echo --once /diffdrive_controller/cmd_vel
+```
+
+用 `/clock` 的时间减去每条 `header.stamp`。如果差值持续大于 `0.5s`，Gazebo 会拒收；如果差值在 `0.05-0.1s` 左右，时间戳正常。
+
+不要只看 `/odom` 判断 Gazebo 里是否真的移动。`/odom` 是差速控制器里程计，排查 Gazebo 真实位置时看 ground truth：
+
+```bash
+timeout 5 ros2 topic echo --once /_internal/sim_ground_truth_pose | grep -A12 -B3 'child_frame_id: turtlebot4'
+```
+
+重点看这一段：
+
+```text
+frame_id: warehouse
+child_frame_id: turtlebot4
+translation:
+  x: ...
+  y: ...
+```
+
+这里才是 Gazebo 世界坐标下机器人实体的位置。
 
 ### 7.5 RViz2 出现多个 rviz2 重名警告
 
@@ -280,4 +353,108 @@ timeout 8 ros2 run tf2_ros tf2_echo map base_link
 ros2 action info /navigate_to_pose
 ```
 
-本次只验证到定位链路和 Nav2 action server 可用，没有发送实际导航目标。
+初次修复时只验证到定位链路和 Nav2 action server 可用；后续现场排查已经观察到实际 `Nav2 Goal` 执行和 Gazebo ground truth 位姿变化，见第 9 节。
+
+---
+
+## 9. 2026-06-30 目标后 Gazebo 看似不动的现场排查
+
+用户在 RViz2 指定目标后，Gazebo 画面里机器人看起来没有同步移动。现场排查结果如下。
+
+Nav2 确实收到目标：
+
+```text
+bt_navigator: Begin navigating from current location (0.04, -0.11) to (0.76, -0.06)
+controller_server: Received a goal, begin computing control effort.
+```
+
+之后又收到一个更远目标：
+
+```text
+bt_navigator: Begin navigating from current location (0.45, -0.12) to (2.66, -2.88)
+```
+
+Nav2 期间多次触发：
+
+```text
+controller_server: Failed to make progress
+controller_server: [follow_path] [ActionServer] Aborting handle.
+local_costmap: Received request to clear entirely the local_costmap
+```
+
+这表示控制器认为机器人一段时间内没有满足进度检查，于是执行 recovery，再重新跟踪路径。当前参数为：
+
+```text
+progress_checker.required_movement_radius = 0.5
+progress_checker.movement_time_allowance = 10.0
+FollowPath.vx_max = 0.5
+FollowPath.vx_min = -0.35
+FollowPath.wz_max = 1.9
+```
+
+Gazebo 同时出现差速控制器拒收旧速度命令：
+
+```text
+diffdrive_controller: Ignoring the received message (timestamp 623.0490000000)
+because it is older than the current time by 0.5010000000 seconds,
+which exceeds the allowed timeout (0.5000)
+```
+
+这说明速度命令已经进入 Gazebo，但部分命令时间戳超过 0.5 秒，被 Gazebo 拒收。拒收的通常是 recovery / 停车阶段遗留的 0 速度命令；当 controller 持续输出新速度后，延迟恢复到正常范围。
+
+现场测得速度链路延迟：
+
+```text
+/cmd_vel_nav:                 lag=+0.000s vx=+0.345 wz=-0.273
+/cmd_vel_smoothed:            lag=+0.027s vx=+0.260 wz=-0.273
+/cmd_vel:                     lag=+0.045s vx=+0.260 wz=-0.279
+/diffdrive_controller/cmd_vel: lag=+0.075s vx=+0.260 wz=-0.279
+```
+
+这表示目标执行中的新速度命令是新鲜的，可以被 Gazebo 接收。
+
+Gazebo ground truth 也确认机器人实体最后确实移动到了目标附近：
+
+```text
+frame_id: warehouse
+child_frame_id: turtlebot4
+translation:
+  x: 2.68886070437523
+  y: -2.698822211574801
+```
+
+而目标日志为：
+
+```text
+to (2.66, -2.88)
+```
+
+所以这次不是“目标没有发送”或“Gazebo 完全不动”。更准确的原因是：
+
+- Nav2 目标已送达，action server 正常工作；
+- 早期和 recovery 阶段存在旧时间戳速度命令，Gazebo diffdrive 会拒收；
+- 控制器多次 `Failed to make progress`，导致视觉上出现停顿、恢复、再走；
+- Gazebo 真实位姿和 `/odom`、RViz map 位姿不是同一个坐标源，排查时必须看 `/_internal/sim_ground_truth_pose`；
+- 最终 ground truth 显示 Gazebo 实体已移动到目标附近。
+
+如果再次出现“看起来没动”，按下面顺序判断：
+
+```bash
+# 1. 目标是否进入 Nav2
+docker logs --tail 300 hyaxon-tour-guide-robot-sim-1 2>&1 | grep -E 'Begin navigating|Goal succeeded|Failed to make progress'
+
+# 2. Nav2 是否还在发速度
+timeout 5 ros2 topic echo --once /cmd_vel_nav
+timeout 5 ros2 topic echo --once /cmd_vel
+timeout 5 ros2 topic echo --once /diffdrive_controller/cmd_vel
+
+# 3. Gazebo 是否拒收旧速度
+docker logs --tail 300 hyaxon-tour-guide-robot-sim-1 2>&1 | grep 'Ignoring the received message'
+
+# 4. Gazebo 实体真实位置
+timeout 5 ros2 topic echo --once /_internal/sim_ground_truth_pose | grep -A12 -B3 'child_frame_id: turtlebot4'
+```
+
+若第 2 步速度为 0，但 action 仍在执行，重点查 costmap / collision monitor / progress checker。  
+若第 2 步速度非 0、第 3 步持续拒收，重点查速度时间戳和系统负载。  
+若第 4 步坐标在变，只是 Gazebo 视角没跟随或移动幅度小；切换 Gazebo camera 跟随机器人或放大视图再观察。
