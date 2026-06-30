@@ -27,6 +27,15 @@ RUN set -eux; \
     printf '[global]\nproxy = %s\ntimeout = 120\n' "${TOURBOT_PROXY}" > /etc/pip.conf; \
     printf '[http]\n\tproxy = %s\n[https]\n\tproxy = %s\n' "${TOURBOT_PROXY}" "${TOURBOT_PROXY}" > /etc/gitconfig
 
+# Keep ROS client and diagnostic packages ABI-aligned with newer Nav2 / ros2_control packages.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ros-${ROS_DISTRO}-rclcpp \
+    ros-${ROS_DISTRO}-rclcpp-action \
+    ros-${ROS_DISTRO}-rclcpp-components \
+    ros-${ROS_DISTRO}-rclcpp-lifecycle \
+    ros-${ROS_DISTRO}-diagnostic-updater \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     bash-completion \
     build-essential \

@@ -245,6 +245,101 @@ docker compose -f docker_stuff/compose.yaml run --rm --no-deps dev bash -lc \
   'source install/setup.bash && ros2 node list && ros2 action list -t && ros2 topic list -t'
 ```
 
+#### 4.2 FAQ: Gazebo 启动一会儿后退出
+
+2026-06-30 在 `xiao-5080` 上复现过该问题。表面现象是 `docker compose -f docker_stuff/compose.yaml --profile sim up sim` 运行一会儿后 Gazebo 退出，随后 controller spawner 报超时。
+
+先抓关键日志：
+
+```bash
+docker compose -f docker_stuff/compose.yaml logs sim 2>&1 | \
+  grep -nE 'symbol lookup error|diagnostic_updater|controller_manager|spawner|Downloading model|SIGKILL|failed to create dri2'
+```
+
+如果看到类似下面的日志，根因是镜像里的 ROS apt 包 ABI 混用，不是 Gazebo GUI 本身崩溃：
+
+```text
+libnav2_lifecycle_manager_core.so: undefined symbol: ... diagnostic_updater::Updater...
+gz sim server: symbol lookup error: /opt/ros/jazzy/lib/libcontroller_manager.so: undefined symbol: ... diagnostic_updater::Updater...
+spawner_joint_state_broadcaster: Could not contact service /controller_manager/list_controllers
+spawner_diffdrive_controller: Could not contact service /controller_manager/list_controllers
+```
+
+实测原因：当前旧镜像里 `controller_manager`、`gz_ros2_control`、Nav2 是 2026-06-15 一批新包，但 `ros-jazzy-rclcpp` 和 `ros-jazzy-diagnostic-updater` 仍停在 2026-04-12。`controller_manager` 需要新版 `diagnostic_updater::Updater(..., double, bool)` 符号，旧库没有这个符号，所以 Gazebo server 在加载 ros2_control 插件时退出。
+
+确认命令：
+
+```bash
+docker compose -f docker_stuff/compose.yaml run --rm --no-deps dev bash -lc '
+  apt-get update >/dev/null
+  apt-cache policy ros-jazzy-rclcpp ros-jazzy-diagnostic-updater ros-jazzy-controller-manager
+  nm -D /opt/ros/jazzy/lib/libdiagnostic_updater.so | c++filt | grep "diagnostic_updater::Updater::Updater" || true
+'
+```
+
+临时修复当前已创建的 `sim` 容器：
+
+```bash
+docker compose -f docker_stuff/compose.yaml exec -T sim bash -lc '
+  apt-get update &&
+  apt-get install --only-upgrade -y \
+    ros-jazzy-rclcpp \
+    ros-jazzy-rclcpp-action \
+    ros-jazzy-rclcpp-components \
+    ros-jazzy-rclcpp-lifecycle \
+    ros-jazzy-diagnostic-updater
+'
+
+docker compose -f docker_stuff/compose.yaml restart sim
+```
+
+如果 `sim` 容器已经退出，直接走永久修复路径。
+
+永久修复路径：本仓库 `docker_stuff/Dockerfile.jazzy` 已显式安装/升级以下包，重建镜像即可让新容器不再复现该 ABI 问题：
+
+```text
+ros-${ROS_DISTRO}-rclcpp
+ros-${ROS_DISTRO}-rclcpp-action
+ros-${ROS_DISTRO}-rclcpp-components
+ros-${ROS_DISTRO}-rclcpp-lifecycle
+ros-${ROS_DISTRO}-diagnostic-updater
+```
+
+重建和启动：
+
+```bash
+docker compose -f docker_stuff/compose.yaml down
+docker compose -f docker_stuff/compose.yaml build --no-cache dev
+docker compose -f docker_stuff/compose.yaml run --rm build
+ROS_DOMAIN_ID=142 docker compose -f docker_stuff/compose.yaml --profile sim up --force-recreate sim
+```
+
+验证修复：
+
+```bash
+docker compose -f docker_stuff/compose.yaml exec -T sim bash -lc '
+  source /opt/ros/jazzy/setup.bash
+  nm -D /opt/ros/jazzy/lib/libdiagnostic_updater.so | c++filt | grep "double, unsigned char"
+  ldd -r /opt/ros/jazzy/lib/libcontroller_manager.so 2>&1 | grep "undefined symbol" || true
+  ros2 service list | grep /controller_manager/list_controllers
+'
+```
+
+`ldd -r` 没有 `undefined symbol`，且 `/controller_manager/list_controllers` 出现，说明 ros2_control 已加载。
+
+另一个容易误判的问题是首次运行官方 warehouse world 会从 Gazebo Fuel 下载大量模型。日志里会持续出现 `Downloading model [fuel.gazebosim.org/...]`。如果只有下载和 spawner timeout，没有 `symbol lookup error`，通常是首次下载太慢导致 spawner 30 秒超时；等模型缓存完成后重启一次即可：
+
+```bash
+docker compose -f docker_stuff/compose.yaml restart sim
+```
+
+如果同时开着 `robot`、`mission` 和 `sim`，ROS graph 会出现重复节点名，排查 smoke test 时优先停止其它服务或使用独立 `ROS_DOMAIN_ID`。最干净路径是：
+
+```bash
+docker compose -f docker_stuff/compose.yaml down
+ROS_DOMAIN_ID=142 docker compose -f docker_stuff/compose.yaml --profile sim up --force-recreate sim
+```
+
 ### 4.3 当前仓库 cardboard_city world/map 仿真
 
 当前仓库实际 world 文件是：
