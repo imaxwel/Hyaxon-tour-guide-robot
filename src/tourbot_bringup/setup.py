@@ -82,6 +82,10 @@ setup(
         'test': ['pytest'],
     },
     entry_points={
-        'console_scripts': [],
+        'console_scripts': [
+            'nav2_post_localization_activator = '
+            'tourbot_bringup.nav2_post_localization_activator:main',
+            'odom_tf_compat = tourbot_bringup.odom_tf_compat:main',
+        ],
     },
 )
