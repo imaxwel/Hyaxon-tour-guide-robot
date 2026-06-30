@@ -52,16 +52,16 @@
 
 ```text
 Hyaxon-tour-guide-robot/
-├── docker/
+├── docker_stuff/
 │   ├── Dockerfile.jazzy
-│   └── ros_entrypoint.sh
-├── compose.yaml
-├── .dockerignore
+│   ├── ros_entrypoint.sh
+│   ├── compose.yaml
+│   └── .dockerignore
 └── docss/
     └── 006-docker-compose-bp.md
 ```
 
-本文档只规划步骤和推荐内容；真正落地时按第 6 节把文件写入远端工程。
+本文档只规划步骤和推荐内容；真正落地时按第 7 节把容器相关文件全部写入远端工程的 `docker_stuff/` 目录。
 
 ---
 
@@ -167,9 +167,37 @@ nvidia-smi --query-gpu=memory.used,memory.free,utilization.gpu --format=csv
 
 ---
 
-## 6. 落地文件
+## 6. 代理基线
 
-### 6.1 `.dockerignore`
+当前主机的 `docker pull` 已经回走代理。容器内仍需要显式配置代理，覆盖以下四类流量：
+
+| 类型 | 配置位置 | 目标 |
+|---|---|---|
+| `apt` | `/etc/apt/apt.conf.d/99proxy` | `apt update/install` 走代理 |
+| `pip` | `/etc/pip.conf` | `pip install` 走代理 |
+| Git/GitHub | `/etc/gitconfig` + `HTTP(S)_PROXY` | `git clone/fetch`、GitHub HTTPS 走代理 |
+| 容器内 Docker CLI | `/root/.docker/config.json` + `DOCKER_CONFIG` | 容器内执行 `docker build/run` 时向子容器/构建注入代理 |
+
+统一代理地址：
+
+```bash
+TOURBOT_PROXY=http://192.168.100.8:31415
+TOURBOT_NO_PROXY=localhost,127.0.0.1,::1,192.168.0.0/16,10.0.0.0/8,172.16.0.0/12,xiao-5080,5080-MS-eSport-Z890M
+```
+
+原则：
+
+- Docker daemon 的 `pull` 代理继续由宿主机配置负责，Compose 文档不重复配置宿主 daemon。
+- 镜像构建阶段使用 `ARG` + `ENV`，让 `apt`、`pip`、`git` 在 build 时可用。
+- 容器运行阶段保留 `HTTP_PROXY`、`HTTPS_PROXY`、`NO_PROXY`，让交互式调试时的 `apt/pip/git` 同样可用。
+- `NO_PROXY` 必须覆盖 localhost、局域网、ROS 2 机器人网络和主机名，避免 DDS、TurtleBot4、VNC、Docker socket 等内网流量被错误转发到代理。
+- 不建议在仓库中提交包含账号密码的代理 URL；当前代理无凭据，可直接写入文档和 Compose。
+
+---
+
+## 7. 落地文件
+
+### 7.1 `docker_stuff/.dockerignore`
 
 ```dockerignore
 .git
@@ -186,7 +214,7 @@ log
 __pycache__
 ```
 
-### 6.2 `docker/ros_entrypoint.sh`
+### 7.2 `docker_stuff/ros_entrypoint.sh`
 
 ```bash
 #!/usr/bin/env bash
@@ -201,10 +229,13 @@ fi
 exec "$@"
 ```
 
-### 6.3 `docker/Dockerfile.jazzy`
+### 7.3 `docker_stuff/Dockerfile.jazzy`
 
 ```dockerfile
 FROM osrf/ros:jazzy-desktop-full
+
+ARG TOURBOT_PROXY=http://192.168.100.8:31415
+ARG TOURBOT_NO_PROXY=localhost,127.0.0.1,::1,192.168.0.0/16,10.0.0.0/8,172.16.0.0/12,xiao-5080,5080-MS-eSport-Z890M
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV ROS_DISTRO=jazzy
@@ -213,8 +244,25 @@ ENV LC_ALL=C.UTF-8
 ENV QT_X11_NO_MITSHM=1
 ENV NVIDIA_VISIBLE_DEVICES=all
 ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics,display
+ENV HTTP_PROXY=${TOURBOT_PROXY}
+ENV HTTPS_PROXY=${TOURBOT_PROXY}
+ENV ALL_PROXY=${TOURBOT_PROXY}
+ENV NO_PROXY=${TOURBOT_NO_PROXY}
+ENV http_proxy=${TOURBOT_PROXY}
+ENV https_proxy=${TOURBOT_PROXY}
+ENV all_proxy=${TOURBOT_PROXY}
+ENV no_proxy=${TOURBOT_NO_PROXY}
+ENV PIP_CONFIG_FILE=/etc/pip.conf
+ENV DOCKER_CONFIG=/root/.docker
 
 SHELL ["/bin/bash", "-c"]
+
+RUN set -eux; \
+    printf 'Acquire::http::Proxy "%s";\nAcquire::https::Proxy "%s";\n' "${TOURBOT_PROXY}" "${TOURBOT_PROXY}" > /etc/apt/apt.conf.d/99proxy; \
+    printf '[global]\nproxy = %s\ntimeout = 120\n' "${TOURBOT_PROXY}" > /etc/pip.conf; \
+    printf '[http]\n	proxy = %s\n[https]\n	proxy = %s\n' "${TOURBOT_PROXY}" "${TOURBOT_PROXY}" > /etc/gitconfig; \
+    mkdir -p /root/.docker; \
+    printf '{"proxies":{"default":{"httpProxy":"%s","httpsProxy":"%s","noProxy":"%s"}}}\n' "${TOURBOT_PROXY}" "${TOURBOT_PROXY}" "${TOURBOT_NO_PROXY}" > /root/.docker/config.json
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     bash-completion \
@@ -238,6 +286,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     mesa-utils \
     x11-apps \
     v4l-utils \
+    docker.io \
     ros-${ROS_DISTRO}-nav2-bringup \
     ros-${ROS_DISTRO}-navigation2 \
     ros-${ROS_DISTRO}-slam-toolbox \
@@ -257,7 +306,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN rosdep init 2>/dev/null || true
 
-COPY docker/ros_entrypoint.sh /ros_entrypoint.sh
+COPY ros_entrypoint.sh /ros_entrypoint.sh
 RUN chmod +x /ros_entrypoint.sh
 
 WORKDIR /ws
@@ -272,7 +321,7 @@ CMD ["bash"]
 - `rosdep init` 在镜像构建阶段允许失败，避免基础镜像已有 rosdep 配置时报错。
 - TurtleBot4 包名如果因 apt 源差异安装失败，先用 `apt-cache search ros-jazzy-turtlebot4` 在容器基础层确认具体包名，再调整 Dockerfile。
 
-### 6.4 `compose.yaml`
+### 7.4 `docker_stuff/compose.yaml`
 
 ```yaml
 name: hyaxon-tour-guide-robot
@@ -280,7 +329,10 @@ name: hyaxon-tour-guide-robot
 x-tourbot-common: &tourbot-common
   build:
     context: .
-    dockerfile: docker/Dockerfile.jazzy
+    dockerfile: Dockerfile.jazzy
+    args:
+      TOURBOT_PROXY: ${TOURBOT_PROXY:-http://192.168.100.8:31415}
+      TOURBOT_NO_PROXY: ${TOURBOT_NO_PROXY:-localhost,127.0.0.1,::1,192.168.0.0/16,10.0.0.0/8,172.16.0.0/12,xiao-5080,5080-MS-eSport-Z890M}
   image: hyaxon-tour-guide-robot:jazzy
   network_mode: host
   ipc: host
@@ -297,13 +349,24 @@ x-tourbot-common: &tourbot-common
     QT_X11_NO_MITSHM: "1"
     NVIDIA_VISIBLE_DEVICES: all
     NVIDIA_DRIVER_CAPABILITIES: compute,utility,graphics,display
+    HTTP_PROXY: ${HTTP_PROXY:-http://192.168.100.8:31415}
+    HTTPS_PROXY: ${HTTPS_PROXY:-http://192.168.100.8:31415}
+    ALL_PROXY: ${ALL_PROXY:-http://192.168.100.8:31415}
+    NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1,::1,192.168.0.0/16,10.0.0.0/8,172.16.0.0/12,xiao-5080,5080-MS-eSport-Z890M}
+    http_proxy: ${http_proxy:-http://192.168.100.8:31415}
+    https_proxy: ${https_proxy:-http://192.168.100.8:31415}
+    all_proxy: ${all_proxy:-http://192.168.100.8:31415}
+    no_proxy: ${no_proxy:-localhost,127.0.0.1,::1,192.168.0.0/16,10.0.0.0/8,172.16.0.0/12,xiao-5080,5080-MS-eSport-Z890M}
+    PIP_CONFIG_FILE: /etc/pip.conf
+    DOCKER_CONFIG: /root/.docker
   volumes:
-    - .:/ws:rw
+    - ..:/ws:rw
     - tourbot-build:/ws/build
     - tourbot-install:/ws/install
     - tourbot-log:/ws/log
     - /tmp/.X11-unix:/tmp/.X11-unix:rw
     - /home/xiaozy/.Xauthority:/home/xiaozy/.Xauthority:ro
+    - /var/run/docker.sock:/var/run/docker.sock
     - /dev:/dev
   devices:
     - /dev/dri:/dev/dri
@@ -348,6 +411,9 @@ volumes:
 
 关键决策：
 
+- `docker_stuff/compose.yaml` 的 `build.context` 是 `.`，用于只把容器构建文件作为 Docker build context；源码挂载使用 `..:/ws`，确保容器内 `/ws` 是工程根目录。
+- 代理 build args 和运行时环境变量都提供默认值，正常情况下无需额外导出环境变量。
+- `/var/run/docker.sock` 只用于容器内 Docker CLI 复用宿主 Docker daemon；镜像内安装 `docker.io` 是为了提供 `docker` 客户端，不在容器内启动 Docker daemon。这不是 Docker-in-Docker，安全边界等同于授予容器宿主 Docker 控制权，只应在开发容器中使用。
 - `network_mode: host`：ROS 2 DDS、真实机器人发现、Nav2/RViz 通信更直接。
 - `ipc: host`：降低图像、Gazebo、RViz 共享内存问题。
 - `gpus: all`：使用 Compose 原生 GPU 声明，不再写旧式 `runtime: nvidia`。
@@ -356,7 +422,7 @@ volumes:
 
 ---
 
-## 7. 首次构建与编译
+## 8. 首次构建与编译
 
 进入远端工程：
 
@@ -365,22 +431,30 @@ ssh xiao-5080
 cd /home/xiaozy/4sim/gh-ref/tour-guide-robot/Hyaxon-tour-guide-robot
 ```
 
+容器相关文件位于 `docker_stuff/`，从工程根目录执行 Compose 时统一加 `-f docker_stuff/compose.yaml`。如果切到 `docker_stuff/` 目录，也可以省略 `-f`。
+
+可选：先验证代理出口。
+
+```bash
+curl -I -x http://192.168.100.8:31415 https://github.com
+```
+
 创建文件后，构建镜像：
 
 ```bash
-docker compose build dev
+docker compose -f docker_stuff/compose.yaml build dev
 ```
 
 安装依赖并编译工作空间：
 
 ```bash
-docker compose run --rm build
+docker compose -f docker_stuff/compose.yaml run --rm build
 ```
 
 如果 rosdep 因某个包无法解析失败，先进入 dev 容器定位：
 
 ```bash
-docker compose run --rm dev
+docker compose -f docker_stuff/compose.yaml run --rm dev
 rosdep check --from-paths src --ignore-src
 ```
 
@@ -392,12 +466,12 @@ rosdep check --from-paths src --ignore-src
 
 ---
 
-## 8. 日常开发命令
+## 9. 日常开发命令
 
 进入开发容器：
 
 ```bash
-docker compose run --rm dev
+docker compose -f docker_stuff/compose.yaml run --rm dev
 ```
 
 容器内手动构建：
@@ -436,9 +510,9 @@ export DISPLAY=:22
 
 ---
 
-## 9. 启动流程
+## 10. 启动流程
 
-### 9.1 真实机器人/真实 ROS 网络
+### 10.1 真实机器人/真实 ROS 网络
 
 终端 1：启动 VNC 并进入桌面。
 
@@ -450,33 +524,33 @@ export DISPLAY=:22
 
 ```bash
 cd /home/xiaozy/4sim/gh-ref/tour-guide-robot/Hyaxon-tour-guide-robot
-docker compose run --rm build
+docker compose -f docker_stuff/compose.yaml run --rm build
 ```
 
 终端 3：启动导航。
 
 ```bash
-docker compose --profile robot up robot
+docker compose -f docker_stuff/compose.yaml --profile robot up robot
 ```
 
 终端 4：确认 Nav2/RViz 正常后启动 mission。
 
 ```bash
-docker compose --profile mission up mission
+docker compose -f docker_stuff/compose.yaml --profile mission up mission
 ```
 
 停止：
 
 ```bash
-docker compose --profile robot --profile mission down
+docker compose -f docker_stuff/compose.yaml --profile robot --profile mission down
 ```
 
-### 9.2 仿真
+### 10.2 仿真
 
 ```bash
 cd /home/xiaozy/4sim/gh-ref/tour-guide-robot/Hyaxon-tour-guide-robot
-docker compose run --rm build
-docker compose --profile sim up sim
+docker compose -f docker_stuff/compose.yaml run --rm build
+docker compose -f docker_stuff/compose.yaml --profile sim up sim
 ```
 
 若 Gazebo/RViz 黑屏或卡顿：
@@ -489,12 +563,12 @@ nvidia-smi
 
 ---
 
-## 10. VirtualGL 与 GUI 策略
+## 11. VirtualGL 与 GUI 策略
 
 默认建议：容器 GUI 直接接入 TurboVNC 的 Xvnc `:22`。
 
 ```bash
-DISPLAY=:22 docker compose run --rm dev rviz2
+DISPLAY=:22 docker compose -f docker_stuff/compose.yaml run --rm dev rviz2
 ```
 
 优点：
@@ -506,7 +580,7 @@ DISPLAY=:22 docker compose run --rm dev rviz2
 当需要物理 GPU OpenGL 渲染时，可在容器命令前使用 VirtualGL，但这要求宿主机 `:0` 对 xiaozy 或容器用户授权：
 
 ```bash
-DISPLAY=:22 docker compose run --rm dev bash
+DISPLAY=:22 docker compose -f docker_stuff/compose.yaml run --rm dev bash
 vglrun -d :0 rviz2
 ```
 
@@ -526,7 +600,7 @@ DISPLAY=:0 xhost +si:localuser:root
 
 ---
 
-## 11. ROS 2 网络建议
+## 12. ROS 2 网络建议
 
 Compose 中默认：
 
@@ -542,7 +616,7 @@ RMW_IMPLEMENTATION: ${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}
 - 若 TurtleBot4 已使用固定 domain，应以机器人实际配置为准，例如：
 
 ```bash
-ROS_DOMAIN_ID=0 docker compose --profile robot up robot
+ROS_DOMAIN_ID=0 docker compose -f docker_stuff/compose.yaml --profile robot up robot
 ```
 
 检查发现：
@@ -555,7 +629,7 @@ ros2 doctor --report
 
 ---
 
-## 12. 硬件设备挂载策略
+## 13. 硬件设备挂载策略
 
 当前 compose 使用：
 
@@ -588,26 +662,26 @@ devices:
 
 ---
 
-## 13. 验收清单
+## 14. 验收清单
 
 | # | 命令 | 通过标准 |
 |---|---|---|
-| 1 | `docker compose config` | YAML 无错误 |
-| 2 | `docker compose build dev` | 镜像构建成功 |
-| 3 | `docker compose run --rm dev nvidia-smi` | 显示 RTX 5080 |
-| 4 | `DISPLAY=:22 docker compose run --rm dev xeyes` | VNC 桌面出现窗口 |
-| 5 | `docker compose run --rm build` | `colcon build` 成功 |
-| 6 | `docker compose run --rm dev ros2 pkg list | grep tourbot` | 能看到工程包 |
-| 7 | `docker compose run --rm dev ros2 launch tourbot_bringup robot.launch.py --show-args` | launch 文件解析成功 |
-| 8 | `docker compose --profile sim up sim` | Gazebo/RViz 能启动，或在当前项目限制内给出明确缺失 |
-| 9 | `docker compose --profile robot up robot` | Nav2/RViz 启动，无 ROS 包缺失 |
-| 10 | `docker compose --profile mission up mission` | 行为 server 和 mission node 启动 |
+| 1 | `docker compose -f docker_stuff/compose.yaml config` | YAML 无错误 |
+| 2 | `docker compose -f docker_stuff/compose.yaml build dev` | 镜像构建成功 |
+| 3 | `docker compose -f docker_stuff/compose.yaml run --rm dev nvidia-smi` | 显示 RTX 5080 |
+| 4 | `DISPLAY=:22 docker compose -f docker_stuff/compose.yaml run --rm dev xeyes` | VNC 桌面出现窗口 |
+| 5 | `docker compose -f docker_stuff/compose.yaml run --rm build` | `colcon build` 成功 |
+| 6 | `docker compose -f docker_stuff/compose.yaml run --rm dev ros2 pkg list | grep tourbot` | 能看到工程包 |
+| 7 | `docker compose -f docker_stuff/compose.yaml run --rm dev ros2 launch tourbot_bringup robot.launch.py --show-args` | launch 文件解析成功 |
+| 8 | `docker compose -f docker_stuff/compose.yaml --profile sim up sim` | Gazebo/RViz 能启动，或在当前项目限制内给出明确缺失 |
+| 9 | `docker compose -f docker_stuff/compose.yaml --profile robot up robot` | Nav2/RViz 启动，无 ROS 包缺失 |
+| 10 | `docker compose -f docker_stuff/compose.yaml --profile mission up mission` | 行为 server 和 mission node 启动 |
 
 ---
 
-## 14. 故障排查
+## 15. 故障排查
 
-### 14.1 `could not select device driver "" with capabilities: [[gpu]]`
+### 15.1 `could not select device driver "" with capabilities: [[gpu]]`
 
 说明 Docker 没正确识别 NVIDIA runtime。当前主机检查已显示 `nvidia` runtime 存在；如果后续失效，检查：
 
@@ -619,7 +693,7 @@ sudo systemctl restart docker
 
 `xiaozy` 不在 sudo 组时，需要管理员执行后两条。
 
-### 14.2 RViz/Gazebo 无法打开窗口
+### 15.2 RViz/Gazebo 无法打开窗口
 
 检查 VNC：
 
@@ -631,7 +705,7 @@ ls -l /tmp/.X11-unix/X22
 检查容器环境：
 
 ```bash
-docker compose run --rm dev bash -lc 'echo $DISPLAY; ls -l /tmp/.X11-unix; xeyes'
+docker compose -f docker_stuff/compose.yaml run --rm dev bash -lc 'echo $DISPLAY; ls -l /tmp/.X11-unix; xeyes'
 ```
 
 如果 `Xauthority` 失败，可临时在 VNC 终端中执行：
@@ -648,17 +722,17 @@ user: "1005:1005"
 
 但要同步处理 `/ws/build`、`/ws/install` volume 权限。
 
-### 14.3 `colcon build` 找不到 TurtleBot4 包
+### 15.3 `colcon build` 找不到 TurtleBot4 包
 
 先确认 apt 包名：
 
 ```bash
-docker compose run --rm dev bash -lc 'apt-cache search ros-jazzy-turtlebot4 | sort'
+docker compose -f docker_stuff/compose.yaml run --rm dev bash -lc 'apt-cache search ros-jazzy-turtlebot4 | sort'
 ```
 
 根据实际包名调整 Dockerfile。不要把宿主机 `/opt/ros/jazzy` bind mount 到容器覆盖镜像内 ROS 安装。
 
-### 14.4 ROS 2 看不到机器人话题
+### 15.4 ROS 2 看不到机器人话题
 
 使用 host network 后，一般不是 Docker NAT 问题。重点查：
 
@@ -671,7 +745,31 @@ ros2 topic list
 
 确认 TurtleBot4、容器和其它 ROS 2 节点使用相同 `ROS_DOMAIN_ID` 和兼容 RMW。
 
-### 14.5 GPU 显存不足
+### 15.5 容器内 apt/pip/git/GitHub 未走代理
+
+进入容器检查：
+
+```bash
+docker compose -f docker_stuff/compose.yaml run --rm dev bash
+env | grep -i proxy
+cat /etc/apt/apt.conf.d/99proxy
+cat /etc/pip.conf
+git config --system --get http.proxy
+git config --system --get https.proxy
+cat /root/.docker/config.json
+```
+
+快速验证：
+
+```bash
+apt-get update
+pip config list
+git ls-remote https://github.com/ros2/ros2.git HEAD
+```
+
+如果 `git` 或 `pip` 仍不走代理，优先检查是否被命令行参数、用户级配置或 `NO_PROXY` 覆盖。
+
+### 15.6 GPU 显存不足
 
 检查：
 
@@ -683,22 +781,22 @@ nvidia-smi
 
 ---
 
-## 15. 推荐执行顺序
+## 16. 推荐执行顺序
 
-1. 在 `xiao-5080` 工程根目录新增 `.dockerignore`、`docker/ros_entrypoint.sh`、`docker/Dockerfile.jazzy`、`compose.yaml`。
-2. 执行 `docker compose config`，先验证 Compose 文件语法。
-3. 执行 `docker compose build dev`，固定基础依赖。
-4. 执行 `docker compose run --rm dev nvidia-smi`，验证 GPU 注入。
-5. 在 VNC 桌面中执行 `DISPLAY=:22 docker compose run --rm dev xeyes`，验证 GUI。
-6. 执行 `docker compose run --rm build`，验证 rosdep 和 `colcon build`。
-7. 执行 `docker compose run --rm dev ros2 launch tourbot_bringup robot.launch.py --show-args`，验证 launch 解析。
-8. 仿真优先执行 `docker compose --profile sim up sim`；真实机器人优先执行 `docker compose --profile robot up robot`。
-9. Nav2/话题稳定后，再执行 `docker compose --profile mission up mission`。
+1. 在 `xiao-5080` 工程根目录新增 `docker_stuff/.dockerignore`、`docker_stuff/ros_entrypoint.sh`、`docker_stuff/Dockerfile.jazzy`、`docker_stuff/compose.yaml`。
+2. 执行 `docker compose -f docker_stuff/compose.yaml config`，先验证 Compose 文件语法。
+3. 执行 `docker compose -f docker_stuff/compose.yaml build dev`，固定基础依赖。
+4. 执行 `docker compose -f docker_stuff/compose.yaml run --rm dev nvidia-smi`，验证 GPU 注入。
+5. 在 VNC 桌面中执行 `DISPLAY=:22 docker compose -f docker_stuff/compose.yaml run --rm dev xeyes`，验证 GUI。
+6. 执行 `docker compose -f docker_stuff/compose.yaml run --rm build`，验证 rosdep 和 `colcon build`。
+7. 执行 `docker compose -f docker_stuff/compose.yaml run --rm dev ros2 launch tourbot_bringup robot.launch.py --show-args`，验证 launch 解析。
+8. 仿真优先执行 `docker compose -f docker_stuff/compose.yaml --profile sim up sim`；真实机器人优先执行 `docker compose -f docker_stuff/compose.yaml --profile robot up robot`。
+9. Nav2/话题稳定后，再执行 `docker compose -f docker_stuff/compose.yaml --profile mission up mission`。
 10. 将实际通过的命令和任何包名修正回写到 README 或后续 `docss/007-*` 验收文档。
 
 ---
 
-## 16. 当前建议结论
+## 17. 当前建议结论
 
 在 `xiao-5080` 上运行当前工程，推荐使用 Docker Compose 单镜像多服务方案：
 
