@@ -1,0 +1,178 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 880" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="10" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#374151"/>
+    </marker>
+    <marker id="arrow-blue" markerWidth="10" markerHeight="10" refX="10" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#1d4ed8"/>
+    </marker>
+    <marker id="arrow-red" markerWidth="10" markerHeight="10" refX="10" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#b91c1c"/>
+    </marker>
+    <style>
+      .layer { stroke: #4b5563; stroke-width: 1; }
+      .layer-label { font-size: 14px; font-weight: 700; fill: #111827; }
+      .node-box { stroke: #1f2937; stroke-width: 1; rx: 8; ry: 8; }
+      .node-text { font-size: 12px; fill: #111827; text-anchor: middle; }
+      .node-sub { font-size: 10px; fill: #374151; text-anchor: middle; }
+      .edge { stroke: #374151; stroke-width: 1.4; fill: none; }
+      .edge-blue { stroke: #1d4ed8; stroke-width: 1.4; fill: none; stroke-dasharray: 4 3; }
+      .edge-red { stroke: #b91c1c; stroke-width: 1.6; fill: none; }
+      .edge-label { font-size: 10px; fill: #1f2937; }
+      .title { font-size: 20px; font-weight: 700; fill: #111827; }
+      .legend-text { font-size: 11px; fill: #1f2937; }
+    </style>
+  </defs>
+
+  <text x="40" y="36" class="title">Tour Guide Robot 系统模块分层拓扑结构图</text>
+  <text x="40" y="56" class="legend-text">实线 = ROS topic 数据流，虚线蓝 = ROS action 调用，红 = TF 关键链路</text>
+
+  <!-- Layer 6 用户接入 -->
+  <rect x="30" y="80" width="1220" height="90" rx="10" fill="#e0e7ff" class="layer"/>
+  <text x="50" y="100" class="layer-label">L6 用户接入层 UI</text>
+  <rect x="80" y="110" width="180" height="50" class="node-box" fill="#fff"/>
+  <text x="170" y="132" class="node-text">RViz2</text>
+  <text x="170" y="148" class="node-sub">2D Pose Estimate · Nav2 Goal</text>
+  <rect x="300" y="110" width="180" height="50" class="node-box" fill="#fff"/>
+  <text x="390" y="132" class="node-text">Gazebo GUI / HMI</text>
+  <text x="390" y="148" class="node-sub">Dock · Undock · Teleop</text>
+  <rect x="520" y="110" width="180" height="50" class="node-box" fill="#fff"/>
+  <text x="610" y="132" class="node-text">CLI</text>
+  <text x="610" y="148" class="node-sub">ros2 action / topic</text>
+  <rect x="740" y="110" width="220" height="50" class="node-box" fill="#fff"/>
+  <text x="850" y="132" class="node-text">TurboVNC + VirtualGL</text>
+  <text x="850" y="148" class="node-sub">DISPLAY=:22 · vglrun -d :0</text>
+
+  <!-- Layer 5 任务层 -->
+  <rect x="30" y="190" width="1220" height="80" rx="10" fill="#fde68a" class="layer"/>
+  <text x="50" y="210" class="layer-label">L5 任务层 Mission</text>
+  <rect x="430" y="218" width="420" height="44" class="node-box" fill="#fff"/>
+  <text x="640" y="238" class="node-text">tour_deliberation_node</text>
+  <text x="640" y="254" class="node-sub">最近邻 landmark 排序 · 调用 Nav2 + 三个行为 action</text>
+
+  <!-- Layer 4 行为层 -->
+  <rect x="30" y="290" width="1220" height="100" rx="10" fill="#fed7aa" class="layer"/>
+  <text x="50" y="310" class="layer-label">L4 行为层 Behavior（ROS 2 Action Servers）</text>
+  <rect x="120" y="318" width="280" height="60" class="node-box" fill="#fff"/>
+  <text x="260" y="340" class="node-text">align_to_apriltag_server</text>
+  <text x="260" y="358" class="node-sub">/align_to_apriltag</text>
+  <text x="260" y="372" class="node-sub">sub /detections · pub /cmd_vel</text>
+  <rect x="500" y="318" width="280" height="60" class="node-box" fill="#fff"/>
+  <text x="640" y="340" class="node-text">wait_for_tag_removed_server</text>
+  <text x="640" y="358" class="node-sub">/wait_for_tag_removed</text>
+  <text x="640" y="372" class="node-sub">sub /detections</text>
+  <rect x="880" y="318" width="280" height="60" class="node-box" fill="#fff"/>
+  <text x="1020" y="340" class="node-text">door_behavior_server</text>
+  <text x="1020" y="358" class="node-sub">/door_traverse</text>
+  <text x="1020" y="372" class="node-sub">sub /odom · pub /cmd_vel</text>
+
+  <!-- Layer 3 导航层 -->
+  <rect x="30" y="410" width="1220" height="120" rx="10" fill="#bbf7d0" class="layer"/>
+  <text x="50" y="430" class="layer-label">L3 导航层 Nav2 + 定位</text>
+  <rect x="80" y="440" width="140" height="40" class="node-box" fill="#fff"/>
+  <text x="150" y="465" class="node-text">amcl</text>
+  <rect x="240" y="440" width="140" height="40" class="node-box" fill="#fff"/>
+  <text x="310" y="465" class="node-text">map_server</text>
+  <rect x="400" y="440" width="160" height="40" class="node-box" fill="#fff"/>
+  <text x="480" y="465" class="node-text">planner_server</text>
+  <rect x="580" y="440" width="170" height="40" class="node-box" fill="#fff"/>
+  <text x="665" y="465" class="node-text">controller_server</text>
+  <rect x="770" y="440" width="150" height="40" class="node-box" fill="#fff"/>
+  <text x="845" y="465" class="node-text">bt_navigator</text>
+  <rect x="940" y="440" width="160" height="40" class="node-box" fill="#fff"/>
+  <text x="1020" y="465" class="node-text">behavior_server</text>
+  <rect x="1120" y="440" width="110" height="40" class="node-box" fill="#fff"/>
+  <text x="1175" y="465" class="node-text">waypoint_follower</text>
+  <rect x="200" y="488" width="280" height="36" class="node-box" fill="#fff7ed"/>
+  <text x="340" y="510" class="node-text">odom_tf_compat（odom→base_link TF 兜底）</text>
+  <rect x="520" y="488" width="380" height="36" class="node-box" fill="#fff7ed"/>
+  <text x="710" y="510" class="node-text">nav2_post_localization_activator（lifecycle 激活）</text>
+
+  <!-- Layer 2 感知层 -->
+  <rect x="30" y="550" width="1220" height="80" rx="10" fill="#bae6fd" class="layer"/>
+  <text x="50" y="570" class="layer-label">L2 感知层 Perception</text>
+  <rect x="430" y="578" width="420" height="44" class="node-box" fill="#fff"/>
+  <text x="640" y="598" class="node-text">apriltag（apriltag_ros）</text>
+  <text x="640" y="614" class="node-sub">sub /oakd/rgb/preview/{image_raw,camera_info} · pub /detections</text>
+
+  <!-- Layer 1 平台/驱动层 -->
+  <rect x="30" y="650" width="1220" height="100" rx="10" fill="#fecaca" class="layer"/>
+  <text x="50" y="670" class="layer-label">L1 平台/驱动层 Platform</text>
+  <rect x="80" y="680" width="180" height="60" class="node-box" fill="#fff"/>
+  <text x="170" y="702" class="node-text">gz sim server / gui</text>
+  <text x="170" y="720" class="node-sub">物理 / 传感器仿真</text>
+  <rect x="280" y="680" width="180" height="60" class="node-box" fill="#fff"/>
+  <text x="370" y="702" class="node-text">ros_gz_bridge</text>
+  <text x="280" y="720" class="node-sub"></text>
+  <text x="370" y="720" class="node-sub">Gazebo ↔ ROS 2 topic 桥接</text>
+  <rect x="480" y="680" width="180" height="60" class="node-box" fill="#fff"/>
+  <text x="570" y="702" class="node-text">diffdrive_controller</text>
+  <text x="570" y="720" class="node-sub">/cmd_vel → 轮速</text>
+  <rect x="680" y="680" width="180" height="60" class="node-box" fill="#fff"/>
+  <text x="770" y="702" class="node-text">joint_state_broadcaster</text>
+  <text x="770" y="720" class="node-sub">/joint_states</text>
+  <rect x="880" y="680" width="180" height="60" class="node-box" fill="#fff"/>
+  <text x="970" y="702" class="node-text">OAK-D Camera (sim)</text>
+  <text x="970" y="720" class="node-sub">/oakd/rgb/preview/*</text>
+  <rect x="1080" y="680" width="150" height="60" class="node-box" fill="#fff"/>
+  <text x="1155" y="702" class="node-text">LiDAR (sim)</text>
+  <text x="1155" y="720" class="node-sub">/scan</text>
+
+  <!-- Layer 0 配置层 -->
+  <rect x="30" y="770" width="1220" height="80" rx="10" fill="#e5e7eb" class="layer"/>
+  <text x="50" y="790" class="layer-label">L0 配置层 Config</text>
+  <rect x="120" y="800" width="280" height="36" class="node-box" fill="#fff"/>
+  <text x="260" y="822" class="node-text">landmarks.yaml（路线 + tag_id）</text>
+  <rect x="440" y="800" width="280" height="36" class="node-box" fill="#fff"/>
+  <text x="580" y="822" class="node-text">map_area.{pgm,yaml}（占据地图）</text>
+  <rect x="760" y="800" width="220" height="36" class="node-box" fill="#fff"/>
+  <text x="870" y="822" class="node-text">nav2_params.yaml</text>
+  <rect x="1000" y="800" width="220" height="36" class="node-box" fill="#fff"/>
+  <text x="1110" y="822" class="node-text">apriltags_36h11.yaml</text>
+
+  <!-- 关键 edges -->
+  <!-- L6 → L5: RViz Pose/Goal -->
+  <path class="edge" d="M170,160 C170,200 640,200 640,218" marker-end="url(#arrow)"/>
+  <text class="edge-label" x="200" y="190">2D Pose Estimate / Nav2 Goal</text>
+
+  <!-- L5 → L4: actions -->
+  <path class="edge-blue" d="M520,262 C520,300 260,300 260,318" marker-end="url(#arrow-blue)"/>
+  <path class="edge-blue" d="M640,262 L640,318" marker-end="url(#arrow-blue)"/>
+  <path class="edge-blue" d="M760,262 C760,300 1020,300 1020,318" marker-end="url(#arrow-blue)"/>
+
+  <!-- L5 → L3: Nav2 -->
+  <path class="edge-blue" d="M850,240 C1050,240 1050,425 845,440" marker-end="url(#arrow-blue)"/>
+  <text class="edge-label" x="1015" y="295">/navigate_to_pose</text>
+
+  <!-- L4 → L1: cmd_vel -->
+  <path class="edge" d="M260,378 C260,580 570,640 570,680" marker-end="url(#arrow)"/>
+  <text class="edge-label" x="275" y="540">/cmd_vel</text>
+  <path class="edge" d="M1020,378 C1020,540 700,650 600,680" marker-end="url(#arrow)"/>
+
+  <!-- L3 → L1: cmd_vel -->
+  <path class="edge" d="M665,480 C665,600 600,650 580,680" marker-end="url(#arrow)"/>
+
+  <!-- L2 → L4: detections -->
+  <path class="edge" d="M520,600 C420,600 360,540 300,378" marker-end="url(#arrow)"/>
+  <path class="edge" d="M640,578 L640,378" marker-end="url(#arrow)"/>
+  <text class="edge-label" x="650" y="490">/detections</text>
+
+  <!-- L1 → L2: image -->
+  <path class="edge" d="M970,680 C900,650 720,640 640,622" marker-end="url(#arrow)"/>
+  <text class="edge-label" x="800" y="650">/oakd/rgb/preview/*</text>
+
+  <!-- L1 → L3: scan/odom -->
+  <path class="edge" d="M1155,680 C1155,560 200,540 150,480" marker-end="url(#arrow)"/>
+  <text class="edge-label" x="900" y="555">/scan · /odom · TF</text>
+
+  <!-- L0 → L3/L5/L2: 配置 -->
+  <path class="edge-red" d="M580,800 C580,560 480,490 480,488" marker-end="url(#arrow-red)"/>
+  <path class="edge-red" d="M260,800 C260,460 540,300 640,262" marker-end="url(#arrow-red)"/>
+  <path class="edge-red" d="M870,800 C870,680 870,640 640,622" marker-end="url(#arrow-red)"/>
+  <path class="edge-red" d="M1110,800 C1110,640 760,640 640,622" marker-end="url(#arrow-red)"/>
+
+  <!-- Legend -->
+  <rect x="950" y="60" width="290" height="16" fill="#fff" stroke="#9ca3af"/>
+  <text class="legend-text" x="956" y="72">— topic 实线  - - action 蓝虚  ━ TF/配置 红线</text>
+</svg>

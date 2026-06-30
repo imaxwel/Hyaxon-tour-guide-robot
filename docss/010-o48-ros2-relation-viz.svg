@@ -1,0 +1,307 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1360 1180" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#374151"/>
+    </marker>
+    <marker id="arrow-blue" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#1d4ed8"/>
+    </marker>
+    <marker id="arrow-green" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#15803d"/>
+    </marker>
+    <marker id="arrow-red" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#b91c1c"/>
+    </marker>
+    <style>
+      .layer { stroke: #4b5563; stroke-width: 1; }
+      .layer-label { font-size: 15px; font-weight: 700; fill: #111827; }
+      .node { stroke-width: 1.4; rx: 8; }
+      .nt { font-size: 12.5px; font-weight: 600; fill: #111827; text-anchor: middle; }
+      .ns { font-size: 10.5px; fill: #374151; text-anchor: middle; }
+      .edge { fill: none; stroke: #374151; stroke-width: 1.4; }
+      .edge-blue { fill: none; stroke: #1d4ed8; stroke-width: 1.6; }
+      .edge-green { fill: none; stroke: #15803d; stroke-width: 1.6; }
+      .edge-red { fill: none; stroke: #b91c1c; stroke-width: 1.6; stroke-dasharray: 5 4; }
+      .el { font-size: 10px; fill: #1f2937; }
+      .el-blue { font-size: 10px; fill: #1d4ed8; font-weight: 600; }
+      .el-green { font-size: 10px; fill: #15803d; font-weight: 600; }
+      .title { font-size: 21px; font-weight: 800; fill: #0f172a; }
+      .sub { font-size: 12px; fill: #475569; }
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="1360" height="1180" fill="#f8fafc"/>
+  <text x="40" y="40" class="title">O48 · Hyaxon Tour-Guide Robot — 定位建图与 Nav2 模块拓扑</text>
+  <text x="40" y="62" class="sub">运行容器 hyaxon-tour-guide-robot-sim-1 · 实线=topic · 蓝=action · 绿=service · 红虚线=TF · 三层 lifecycle 已 active</text>
+
+  <!-- ===================== Layer bands ===================== -->
+  <rect x="30" y="80"  width="1300" height="150" rx="10" fill="#fef9c3" class="layer"/>
+  <text x="46" y="100" class="layer-label">仿真层 Gazebo + ros_gz_bridge + ros2_control</text>
+
+  <rect x="30" y="246" width="1300" height="150" rx="10" fill="#dbeafe" class="layer"/>
+  <text x="46" y="266" class="layer-label">定位建图层 Localization · Map （lifecycle_manager_localization）</text>
+
+  <rect x="30" y="412" width="1300" height="172" rx="10" fill="#e0e7ff" class="layer"/>
+  <text x="46" y="432" class="layer-label">代价地图 + 路径规划 + 控制 （lifecycle_manager_navigation）</text>
+
+  <rect x="30" y="600" width="1300" height="150" rx="10" fill="#ede9fe" class="layer"/>
+  <text x="46" y="620" class="layer-label">行为树 + 速度安全链 BT · velocity · collision</text>
+
+  <rect x="30" y="766" width="1300" height="150" rx="10" fill="#fce7f3" class="layer"/>
+  <text x="46" y="786" class="layer-label">任务 + 行为 + 感知层 Mission · Behaviors · Perception （设计态，mission.launch 启动）</text>
+
+  <rect x="30" y="932" width="1300" height="96" rx="10" fill="#f1f5f9" class="layer"/>
+  <text x="46" y="952" class="layer-label">胶水层 + 可视化</text>
+
+  <!-- ===================== Nodes ===================== -->
+  <!-- Sim layer -->
+  <rect x="60"  y="115" width="170" height="95" class="node" fill="#fde68a" stroke="#92400e"/>
+  <text x="145" y="150" class="nt">gz sim</text>
+  <text x="145" y="168" class="ns">server + gui</text>
+  <text x="145" y="184" class="ns">cardboard_city</text>
+
+  <rect x="265" y="115" width="190" height="95" class="node" fill="#fde68a" stroke="#92400e"/>
+  <text x="360" y="146" class="nt">ros_gz_bridge</text>
+  <text x="360" y="164" class="ns">lidar / camera / pose</text>
+  <text x="360" y="180" class="ns">cmd_vel / clock 桥接</text>
+
+  <rect x="490" y="115" width="200" height="95" class="node" fill="#fde68a" stroke="#92400e"/>
+  <text x="590" y="146" class="nt">gz_ros_control</text>
+  <text x="590" y="164" class="ns">diffdrive_controller</text>
+  <text x="590" y="180" class="ns">joint_state_broadcaster</text>
+
+  <rect x="725" y="115" width="200" height="95" class="node" fill="#fde68a" stroke="#92400e"/>
+  <text x="825" y="146" class="nt">robot_state_publisher</text>
+  <text x="825" y="164" class="ns">URDF → tf_static</text>
+  <text x="825" y="180" class="ns">base_link → sensors</text>
+
+  <rect x="960" y="115" width="200" height="95" class="node" fill="#fde68a" stroke="#92400e"/>
+  <text x="1060" y="146" class="nt">turtlebot4_node</text>
+  <text x="1060" y="164" class="ns">motion_control</text>
+  <text x="1060" y="180" class="ns">sensors / hmi / ui_mgr</text>
+
+  <!-- Localization layer -->
+  <rect x="60"  y="282" width="200" height="95" class="node" fill="#93c5fd" stroke="#1e3a8a"/>
+  <text x="160" y="316" class="nt">map_server</text>
+  <text x="160" y="334" class="ns">map_area.yaml</text>
+  <text x="160" y="350" class="ns">srv: map / load_map</text>
+
+  <rect x="470" y="282" width="220" height="95" class="node" fill="#93c5fd" stroke="#1e3a8a"/>
+  <text x="580" y="313" class="nt">amcl</text>
+  <text x="580" y="331" class="ns">粒子滤波定位</text>
+  <text x="580" y="347" class="ns">srv: set_initial_pose ·</text>
+  <text x="580" y="362" class="ns">reinitialize_global_localization</text>
+
+  <rect x="960" y="282" width="200" height="95" class="node" fill="#93c5fd" stroke="#1e3a8a"/>
+  <text x="1060" y="316" class="nt">rviz2</text>
+  <text x="1060" y="334" class="ns">/initialpose 点选</text>
+  <text x="1060" y="350" class="ns">/goal_pose 点选</text>
+
+  <!-- Costmap / planner / controller layer -->
+  <rect x="60"  y="450" width="190" height="95" class="node" fill="#a5b4fc" stroke="#3730a3"/>
+  <text x="155" y="481" class="nt">global_costmap</text>
+  <text x="155" y="499" class="ns">static + obstacle</text>
+  <text x="155" y="515" class="ns">/global_costmap/costmap</text>
+
+  <rect x="270" y="450" width="190" height="95" class="node" fill="#a5b4fc" stroke="#3730a3"/>
+  <text x="365" y="481" class="nt">local_costmap</text>
+  <text x="365" y="499" class="ns">voxel + static</text>
+  <text x="365" y="515" class="ns">/local_costmap/costmap</text>
+
+  <rect x="490" y="450" width="180" height="95" class="node" fill="#a5b4fc" stroke="#3730a3"/>
+  <text x="580" y="481" class="nt">planner_server</text>
+  <text x="580" y="499" class="ns">act: compute_path_to_pose</text>
+  <text x="580" y="515" class="ns">pub: /plan</text>
+
+  <rect x="700" y="450" width="180" height="95" class="node" fill="#a5b4fc" stroke="#3730a3"/>
+  <text x="790" y="481" class="nt">controller_server</text>
+  <text x="790" y="499" class="ns">act: follow_path</text>
+  <text x="790" y="515" class="ns">pub: /cmd_vel_nav</text>
+
+  <rect x="910" y="450" width="170" height="95" class="node" fill="#a5b4fc" stroke="#3730a3"/>
+  <text x="995" y="481" class="nt">smoother_server</text>
+  <text x="995" y="499" class="ns">act: smooth_path</text>
+  <text x="995" y="515" class="ns">route_server</text>
+
+  <rect x="1110" y="450" width="190" height="95" class="node" fill="#a5b4fc" stroke="#3730a3"/>
+  <text x="1205" y="481" class="nt">behavior_server</text>
+  <text x="1205" y="499" class="ns">spin · backup · wait</text>
+  <text x="1205" y="515" class="ns">drive_on_heading</text>
+
+  <!-- BT / velocity / collision -->
+  <rect x="60"  y="636" width="220" height="95" class="node" fill="#c4b5fd" stroke="#5b21b6"/>
+  <text x="170" y="667" class="nt">bt_navigator</text>
+  <text x="170" y="685" class="ns">act srv: navigate_to_pose ·</text>
+  <text x="170" y="701" class="ns">navigate_through_poses</text>
+
+  <rect x="320" y="636" width="200" height="95" class="node" fill="#c4b5fd" stroke="#5b21b6"/>
+  <text x="420" y="667" class="nt">waypoint_follower</text>
+  <text x="420" y="685" class="ns">act: follow_waypoints</text>
+  <text x="420" y="701" class="ns">docking_server</text>
+
+  <rect x="560" y="636" width="200" height="95" class="node" fill="#c4b5fd" stroke="#5b21b6"/>
+  <text x="660" y="667" class="nt">velocity_smoother</text>
+  <text x="660" y="685" class="ns">/cmd_vel_nav →</text>
+  <text x="660" y="701" class="ns">/cmd_vel_smoothed</text>
+
+  <rect x="800" y="636" width="220" height="95" class="node" fill="#c4b5fd" stroke="#5b21b6"/>
+  <text x="910" y="667" class="nt">collision_monitor</text>
+  <text x="910" y="685" class="ns">/cmd_vel_smoothed →</text>
+  <text x="910" y="701" class="ns">/cmd_vel （最终）</text>
+
+  <!-- Mission / behaviors / perception -->
+  <rect x="60"  y="802" width="210" height="95" class="node" fill="#f9a8d4" stroke="#9d174d"/>
+  <text x="165" y="833" class="nt">tour_deliberation_node</text>
+  <text x="165" y="851" class="ns">TurtleBot4Navigator</text>
+  <text x="165" y="867" class="ns">贪心遍历 landmarks</text>
+
+  <rect x="310" y="802" width="200" height="95" class="node" fill="#f9a8d4" stroke="#9d174d"/>
+  <text x="410" y="833" class="nt">align_to_apriltag</text>
+  <text x="410" y="851" class="ns">_server</text>
+  <text x="410" y="867" class="ns">act: align_to_apriltag</text>
+
+  <rect x="540" y="802" width="200" height="95" class="node" fill="#f9a8d4" stroke="#9d174d"/>
+  <text x="640" y="833" class="nt">door_behavior_server</text>
+  <text x="640" y="851" class="ns">wait_for_tag_removed</text>
+  <text x="640" y="867" class="ns">act: door_traverse ·</text>
+
+  <rect x="770" y="802" width="200" height="95" class="node" fill="#86efac" stroke="#166534"/>
+  <text x="870" y="833" class="nt">apriltag</text>
+  <text x="870" y="851" class="ns">image_raw + camera_info</text>
+  <text x="870" y="867" class="ns">pub: /detections</text>
+
+  <rect x="1000" y="802" width="200" height="95" class="node" fill="#fde68a" stroke="#92400e"/>
+  <text x="1100" y="833" class="nt">oakd 相机</text>
+  <text x="1100" y="851" class="ns">/oakd/rgb/preview</text>
+  <text x="1100" y="867" class="ns">/image_raw</text>
+
+  <!-- Glue / viz -->
+  <rect x="60"  y="962" width="230" height="56" class="node" fill="#fcd34d" stroke="#b45309"/>
+  <text x="175" y="986" class="nt">odom_tf_compat</text>
+  <text x="175" y="1004" class="ns">/odom → TF odom→base_link</text>
+
+  <rect x="320" y="962" width="280" height="56" class="node" fill="#fcd34d" stroke="#b45309"/>
+  <text x="460" y="986" class="nt">nav2_post_localization_activator</text>
+  <text x="460" y="1004" class="ns">等 map→base_link 稳定后激活 lifecycle</text>
+
+  <rect x="630" y="962" width="250" height="56" class="node" fill="#fcd34d" stroke="#b45309"/>
+  <text x="755" y="986" class="nt">lifecycle_manager × 2</text>
+  <text x="755" y="1004" class="ns">localization / navigation</text>
+
+  <!-- ===================== Edges ===================== -->
+  <!-- sim -> scan -> amcl -->
+  <path class="edge" d="M360,210 L360,255 L520,255 L520,282" marker-end="url(#arrow)"/>
+  <text x="372" y="248" class="el">/scan （LaserScan）</text>
+
+  <!-- sim odom -> odom_tf_compat (down to glue) -->
+  <path class="edge" d="M590,210 L590,400 L300,400 L300,820 L300,820" marker-end="url(#arrow)" opacity="0"/>
+  <!-- odom from bridge to controller/bt -->
+  <path class="edge" d="M610,210 L610,440" marker-end="url(#arrow)"/>
+  <text x="618" y="300" class="el">/odom</text>
+
+  <!-- robot_state_publisher tf_static (red) -->
+  <path class="edge-red" d="M825,210 L825,232 L600,232" marker-end="url(#arrow-red)"/>
+  <text x="640" y="226" class="el-green">tf_static base_link→sensors</text>
+
+  <!-- map_server -> amcl  /map -->
+  <path class="edge" d="M260,330 L470,330" marker-end="url(#arrow)"/>
+  <text x="300" y="322" class="el">/map （OccupancyGrid）</text>
+
+  <!-- map -> global costmap -->
+  <path class="edge" d="M160,377 L160,450" marker-end="url(#arrow)"/>
+  <text x="166" y="415" class="el">/map</text>
+
+  <!-- amcl -> TF map->odom (red) down toward glue/costmaps -->
+  <path class="edge-red" d="M560,377 L560,405 L40,405 L40,520 L60,520" marker-end="url(#arrow-red)" opacity="0"/>
+  <path class="edge-red" d="M520,377 L520,398 L20,398 L20,990 L60,990" marker-end="url(#arrow-red)"/>
+  <text x="30" y="392" class="el-green">TF map→odom</text>
+
+  <!-- rviz initialpose -> amcl -->
+  <path class="edge" d="M960,330 L690,330" marker-end="url(#arrow)"/>
+  <text x="720" y="322" class="el">/initialpose</text>
+
+  <!-- global costmap -> planner -->
+  <path class="edge" d="M250,498 L490,498" marker-end="url(#arrow)"/>
+  <text x="300" y="490" class="el">costmap</text>
+
+  <!-- local costmap -> controller -->
+  <path class="edge" d="M460,520 L700,520" marker-end="url(#arrow)"/>
+  <text x="510" y="512" class="el">costmap</text>
+
+  <!-- bt -> planner (action, blue) -->
+  <path class="edge-blue" d="M180,636 L180,560 L500,560 L540,545" marker-end="url(#arrow-blue)"/>
+  <text x="250" y="556" class="el-blue">compute_path_to_pose</text>
+
+  <!-- bt -> controller (action, blue) -->
+  <path class="edge-blue" d="M210,636 L210,575 L760,575 L780,545" marker-end="url(#arrow-blue)"/>
+  <text x="430" y="571" class="el-blue">follow_path</text>
+
+  <!-- bt -> behavior (action, blue) -->
+  <path class="edge-blue" d="M250,636 L250,590 L1200,590 L1200,545" marker-end="url(#arrow-blue)"/>
+  <text x="1010" y="586" class="el-blue">spin / backup / wait （recovery）</text>
+
+  <!-- controller cmd_vel_nav -> velocity_smoother -->
+  <path class="edge" d="M790,545 L790,610 L660,610 L660,636" marker-end="url(#arrow)"/>
+  <text x="700" y="606" class="el">/cmd_vel_nav</text>
+
+  <!-- velocity_smoother -> collision_monitor -->
+  <path class="edge" d="M760,683 L800,683" marker-end="url(#arrow)"/>
+  <text x="744" y="675" class="el">smoothed</text>
+
+  <!-- collision_monitor -> cmd_vel -> bridge (up to sim) -->
+  <path class="edge" d="M1020,665 L1180,665 L1180,255 L455,235 L455,210" marker-end="url(#arrow)"/>
+  <text x="1100" y="450" class="el-blue">/cmd_vel → ros_gz_bridge → gz</text>
+
+  <!-- tour_deliberation -> bt navigate_to_pose (blue) -->
+  <path class="edge-blue" d="M165,802 L165,731" marker-end="url(#arrow-blue)"/>
+  <text x="172" y="770" class="el-blue">navigate_to_pose</text>
+
+  <!-- tour_deliberation -> amcl set_initial_pose (green) -->
+  <path class="edge-green" d="M270,840 L1240,840 L1240,360 L690,360" marker-end="url(#arrow-green)"/>
+  <text x="1000" y="834" class="el-green">setInitialPose → /initialpose · /set_initial_pose</text>
+
+  <!-- tour_deliberation -> align server (blue) -->
+  <path class="edge-blue" d="M270,820 L310,820" marker-end="url(#arrow-blue)"/>
+  <text x="262" y="812" class="el-blue">align</text>
+
+  <!-- tour_deliberation -> door server (blue) -->
+  <path class="edge-blue" d="M270,880 L540,880" marker-end="url(#arrow-blue)"/>
+  <text x="360" y="894" class="el-blue">wait_for_tag_removed / door_traverse</text>
+
+  <!-- apriltag -> align server /detections -->
+  <path class="edge" d="M770,850 L510,850" marker-end="url(#arrow)"/>
+  <text x="560" y="842" class="el">/detections</text>
+
+  <!-- oakd -> apriltag -->
+  <path class="edge" d="M1000,850 L970,850" marker-end="url(#arrow)"/>
+  <text x="930" y="842" class="el">image</text>
+
+  <!-- align/door -> cmd_vel (overrides) -->
+  <path class="edge-red" d="M410,802 L410,760 L1300,760 L1300,250 L455,230 L455,210" marker-end="url(#arrow-red)" opacity="0"/>
+  <path class="edge" d="M640,802 L640,750 L1250,750 L1250,245" marker-end="url(#arrow)"/>
+  <text x="900" y="744" class="el">行为期直接发 /cmd_vel</text>
+
+  <!-- glue odom_tf_compat -> TF (red, up) -->
+  <path class="edge-red" d="M175,962 L175,760 L505,760" marker-end="url(#arrow-red)" opacity="0"/>
+  <path class="edge-red" d="M290,990 L1320,990 L1320,330 L1160,330" marker-end="url(#arrow-red)" opacity="0"/>
+  <path class="edge-red" d="M175,962 L175,398 L470,398" marker-end="url(#arrow-red)"/>
+  <text x="180" y="600" class="el-green">TF odom→base_link</text>
+
+  <!-- activator -> lifecycle (green) -->
+  <path class="edge-green" d="M600,990 L630,990" marker-end="url(#arrow-green)"/>
+  <text x="540" y="945" class="el-green">change_state</text>
+
+  <!-- legend -->
+  <rect x="980" y="1038" width="350" height="120" rx="8" fill="#ffffff" stroke="#94a3b8"/>
+  <text x="996" y="1060" class="layer-label">图例 Legend</text>
+  <line x1="1000" y1="1078" x2="1040" y2="1078" class="edge" marker-end="url(#arrow)"/>
+  <text x="1048" y="1082" class="el">topic 发布 / 订阅</text>
+  <line x1="1000" y1="1100" x2="1040" y2="1100" class="edge-blue" marker-end="url(#arrow-blue)"/>
+  <text x="1048" y="1104" class="el-blue">action 调用</text>
+  <line x1="1180" y1="1100" x2="1220" y2="1100" class="edge-green" marker-end="url(#arrow-green)"/>
+  <text x="1228" y="1104" class="el-green">service 调用</text>
+  <line x1="1000" y1="1122" x2="1040" y2="1122" class="edge-red" marker-end="url(#arrow-red)"/>
+  <text x="1048" y="1126" class="el">TF 变换 /tf · /tf_static</text>
+  <text x="996" y="1148" class="ns">注：mission 层为 mission.launch 启动的设计态，当前容器仅运行定位+Nav2。</text>
+</svg>
