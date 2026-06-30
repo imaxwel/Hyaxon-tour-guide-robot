@@ -3,7 +3,7 @@
 > 编写日期：2026-06-30  
 > 目标主机：`xiao-5080` / `5080-MS-eSport-Z890M` / Ubuntu 24.04  
 > 目标仓库：`/home/xiaozy/4sim/gh-ref/tour-guide-robot/Hyaxon-tour-guide-robot`  
-> 参考截图：`/tmp/ss/ss2026-06-30-4.33.58.png`  
+> 参考截图：`/tmp/ss/ss2026-06-30-4.33.58.png`    ![p1](https://i.imgur.com/PurgRDu.png) ![p2](https://i.imgur.com/jDfwCjG.png)
 > 操作原则：所有命令都在 `xiao-5080` 上执行，不在当前 Dell notebook 上改仓库内容。
 
 ---
