@@ -359,6 +359,64 @@ docker compose -f docker_stuff/compose.yaml down
 ROS_DOMAIN_ID=142 docker compose -f docker_stuff/compose.yaml --profile sim up --force-recreate sim
 ```
 
+#### 4.2 FAQ: `ros2 node list` 提示 “nodes that share an exact name”，是不是同名节点有多个
+
+2026-06-30 在 `5080` 上排查时遇到如下输出，容易误判：
+
+```text
+root@host:/ws# ros2 node list | grep odom_tf_compat
+WARNING: Be aware that there are nodes in the graph that share an exact name,
+         this can have unintended side effects.
+/odom_tf_compat
+```
+
+**结论先行：这个 warning 不是在说 `odom_tf_compat`。** 它是 `ros2 node list` 的一条**全局**提示——只要 ROS graph 里**任意**一个名字重复出现，它就会在最前面打印这一行，然后照常列出所有节点。用 `grep odom_tf_compat` 过滤时，warning 走 stderr 照样显示，但下面真正属于 `odom_tf_compat` 的只有 1 行，说明它本身**没有**重复。
+
+**先确认到底是谁重复**，不要靠 grep 单个名字猜：
+
+```bash
+# 列出所有真正出现 >1 次的节点名
+ros2 node list 2>/dev/null | sort | uniq -c | sort -rn | awk '$1>1'
+
+# 单独确认某个节点的实例数（odom_tf_compat 应当 = 1）
+ros2 node list 2>/dev/null | grep -c '^/odom_tf_compat$'
+```
+
+本仓库当前实测，重复的是 `/rviz2`（出现 3 次），`odom_tf_compat` 始终为 1：
+
+```text
+      3 /rviz2
+```
+
+**为什么是 `/rviz2` 而不是别的：不是“不同 QoS 发布了两个节点”。** 这里需要纠正一个常见误解：
+
+- **QoS 是 publisher/subscriber 端点（endpoint）的属性，不是节点的属性。** 同一个 topic 上有两个 QoS 不同的端点，只会在 `ros2 topic info -v` 里看到两个 endpoint，**绝不会**因此多出一个节点。节点是进程级实体，和 QoS 无关。
+- `odom_tf_compat.py` 内部只有**一个**节点、一个 `/odom` 订阅、一个 TF broadcaster（单一 QoS：`RELIABLE` + `VOLATILE`），`sim.launch.py` 也只 `Node(name='odom_tf_compat')` 一次，所以它不可能因为 QoS 而变两个。
+- `/rviz2` 的三个实例其实来自**同一个 rviz2 进程**（`ps -ef | grep rviz2` 只有一个 PID）。rviz2 是已知会在内部注册多个同名 `rviz2` 节点的程序（主节点 + 若干显示/工具插件各自 spin 的内部节点），这是 rviz2 的固有行为，对可视化无害，可以忽略。
+
+确认“一个进程、多个同名节点”的方法：
+
+```bash
+ps -ef | grep '[r]viz2'        # 只有 1 个 PID，却在 graph 里出现 3 次 → 进程内部多节点
+```
+
+**行业最佳实践（怎么对待同名节点）**
+
+1. **把这条 warning 当作 graph 级信号，而不是针对某个名字**。排查时先 `sort | uniq -c` 找出真正重复的名字，再用 `grep -c '^/name$'` 给目标节点单独计数，避免被全局 warning 误导。
+2. **区分“良性同名”和“真问题同名”**：
+   - 良性：`rviz2`、部分 GUI/带内部节点的工具——同一进程内多个同名节点，属上游已知行为，忽略即可。
+   - 真问题：**你自己的节点**出现多个实例，几乎都是因为同一个 launch / 容器被起了两遍（例如 `robot`、`mission`、`sim` 同开），或上次进程没退干净。ROS 2 规范要求节点名在 graph 内唯一，重复会让 service / parameter / action 调用打到不确定的实例上，行为未定义，必须消除。
+3. **保证自己节点唯一的标准做法**：
+   - 用唯一 `name=` 或 namespace（`-r __ns:=/robotA`）隔离；多机/多实例用不同 `ROS_DOMAIN_ID` 物理隔离 DDS 域。
+   - 不要重复 include 同一个 launch；smoke test 时只起需要的一组 compose 服务。
+   - bringup 后用 `ros2 node list | sort | uniq -c | awk '$1>1'` 做一次自检（可放进 CI / `ros2 doctor`），把“非预期的同名自有节点”当作失败条件。
+4. **本仓库的干净排查路径**（与 4.2 末尾一致）：先 `down` 再用独立 `ROS_DOMAIN_ID` 单起 `sim`，从源头避免跨服务同名。
+
+```bash
+docker compose -f docker_stuff/compose.yaml down
+ROS_DOMAIN_ID=142 docker compose -f docker_stuff/compose.yaml --profile sim up --force-recreate sim
+```
+
 ### 4.3 当前仓库 cardboard_city world/map 仿真
 
 当前仓库实际 world 文件是：
