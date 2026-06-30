@@ -1,0 +1,81 @@
+name: hyaxon-tour-guide-robot
+
+x-tourbot-common: &tourbot-common
+  build:
+    context: .
+    dockerfile: Dockerfile.jazzy
+    args:
+      TOURBOT_PROXY: ${TOURBOT_PROXY:-http://192.168.100.8:31415}
+      TOURBOT_NO_PROXY: ${TOURBOT_NO_PROXY:-localhost,127.0.0.1,::1,192.168.0.0/16,10.0.0.0/8,172.16.0.0/12,xiao-5080,5080-MS-eSport-Z890M}
+  image: hyaxon-tour-guide-robot:jazzy
+  network_mode: host
+  ipc: host
+  privileged: false
+  gpus: all
+  stdin_open: true
+  tty: true
+  working_dir: /ws
+  environment:
+    ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-22}
+    RMW_IMPLEMENTATION: ${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}
+    DISPLAY: ${DISPLAY:-:22}
+    XAUTHORITY: ${XAUTHORITY:-/home/xiaozy/.Xauthority}
+    QT_X11_NO_MITSHM: "1"
+    NVIDIA_VISIBLE_DEVICES: all
+    NVIDIA_DRIVER_CAPABILITIES: compute,utility,graphics,display
+    HTTP_PROXY: ${HTTP_PROXY:-http://192.168.100.8:31415}
+    HTTPS_PROXY: ${HTTPS_PROXY:-http://192.168.100.8:31415}
+    ALL_PROXY: ${ALL_PROXY:-http://192.168.100.8:31415}
+    NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1,::1,192.168.0.0/16,10.0.0.0/8,172.16.0.0/12,xiao-5080,5080-MS-eSport-Z890M}
+    http_proxy: ${http_proxy:-http://192.168.100.8:31415}
+    https_proxy: ${https_proxy:-http://192.168.100.8:31415}
+    all_proxy: ${all_proxy:-http://192.168.100.8:31415}
+    no_proxy: ${no_proxy:-localhost,127.0.0.1,::1,192.168.0.0/16,10.0.0.0/8,172.16.0.0/12,xiao-5080,5080-MS-eSport-Z890M}
+    PIP_CONFIG_FILE: /etc/pip.conf
+  volumes:
+    - ..:/ws:rw
+    - tourbot-build:/ws/build
+    - tourbot-install:/ws/install
+    - tourbot-log:/ws/log
+    - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    - /home/xiaozy/.Xauthority:/home/xiaozy/.Xauthority:ro
+    - /dev:/dev
+  devices:
+    - /dev/dri:/dev/dri
+  group_add:
+    - "44"    # video
+    - "1010"  # vglusers, owns /dev/dri on xiao-5080
+  security_opt:
+    - seccomp=unconfined
+  ulimits:
+    memlock: -1
+    stack: 67108864
+
+services:
+  dev:
+    <<: *tourbot-common
+    command: bash
+
+  build:
+    <<: *tourbot-common
+    command: bash -lc "apt-get update && rosdep update && rosdep install --from-paths src --ignore-src --skip-keys ament_python -r -y && colcon build --symlink-install"
+
+  robot:
+    <<: *tourbot-common
+    profiles: ["robot"]
+    command: bash -lc "source install/setup.bash && ros2 launch tourbot_bringup robot.launch.py"
+
+  mission:
+    <<: *tourbot-common
+    profiles: ["mission"]
+    command: bash -lc "source install/setup.bash && ros2 launch tourbot_bringup mission.launch.py"
+
+  sim:
+    <<: *tourbot-common
+    profiles: ["sim"]
+    command: bash -lc "source install/setup.bash && ros2 launch tourbot_bringup sim.launch.py"
+
+volumes:
+  tourbot-build:
+  tourbot-install:
+  tourbot-log:

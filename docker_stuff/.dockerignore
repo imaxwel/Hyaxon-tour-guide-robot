@@ -1,0 +1,12 @@
+.git
+build
+install
+log
+.cache
+.vscode
+.idea
+*.bag
+*.db3
+*.mcap
+*.pyc
+__pycache__

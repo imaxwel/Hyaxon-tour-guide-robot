@@ -1,0 +1,76 @@
+FROM osrf/ros:jazzy-desktop-full
+
+ARG TOURBOT_PROXY=http://192.168.100.8:31415
+ARG TOURBOT_NO_PROXY=localhost,127.0.0.1,::1,192.168.0.0/16,10.0.0.0/8,172.16.0.0/12,xiao-5080,5080-MS-eSport-Z890M
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV ROS_DISTRO=jazzy
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
+ENV QT_X11_NO_MITSHM=1
+ENV NVIDIA_VISIBLE_DEVICES=all
+ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics,display
+ENV HTTP_PROXY=${TOURBOT_PROXY}
+ENV HTTPS_PROXY=${TOURBOT_PROXY}
+ENV ALL_PROXY=${TOURBOT_PROXY}
+ENV NO_PROXY=${TOURBOT_NO_PROXY}
+ENV http_proxy=${TOURBOT_PROXY}
+ENV https_proxy=${TOURBOT_PROXY}
+ENV all_proxy=${TOURBOT_PROXY}
+ENV no_proxy=${TOURBOT_NO_PROXY}
+ENV PIP_CONFIG_FILE=/etc/pip.conf
+
+SHELL ["/bin/bash", "-c"]
+
+RUN set -eux; \
+    printf 'Acquire::http::Proxy "%s";\nAcquire::https::Proxy "%s";\n' "${TOURBOT_PROXY}" "${TOURBOT_PROXY}" > /etc/apt/apt.conf.d/99proxy; \
+    printf '[global]\nproxy = %s\ntimeout = 120\n' "${TOURBOT_PROXY}" > /etc/pip.conf; \
+    printf '[http]\n\tproxy = %s\n[https]\n\tproxy = %s\n' "${TOURBOT_PROXY}" "${TOURBOT_PROXY}" > /etc/gitconfig
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    bash-completion \
+    build-essential \
+    cmake \
+    git \
+    python3-colcon-common-extensions \
+    python3-pip \
+    python3-rosdep \
+    python3-vcstool \
+    python3-yaml \
+    libgl1 \
+    libglvnd0 \
+    libglx0 \
+    libegl1 \
+    libx11-6 \
+    libxext6 \
+    libxrender1 \
+    libxcb1 \
+    libxcb-xinerama0 \
+    mesa-utils \
+    x11-apps \
+    v4l-utils \
+    ros-${ROS_DISTRO}-nav2-bringup \
+    ros-${ROS_DISTRO}-navigation2 \
+    ros-${ROS_DISTRO}-slam-toolbox \
+    ros-${ROS_DISTRO}-rviz2 \
+    ros-${ROS_DISTRO}-image-transport \
+    ros-${ROS_DISTRO}-image-transport-plugins \
+    ros-${ROS_DISTRO}-image-proc \
+    ros-${ROS_DISTRO}-image-view \
+    ros-${ROS_DISTRO}-cv-bridge \
+    ros-${ROS_DISTRO}-tf2-ros \
+    ros-${ROS_DISTRO}-camera-ros \
+    ros-${ROS_DISTRO}-turtlebot4-desktop \
+    ros-${ROS_DISTRO}-turtlebot4-navigation \
+    ros-${ROS_DISTRO}-turtlebot4-viz \
+    ros-${ROS_DISTRO}-turtlebot4-simulator \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN rosdep init 2>/dev/null || true
+
+COPY ros_entrypoint.sh /ros_entrypoint.sh
+RUN chmod +x /ros_entrypoint.sh
+
+WORKDIR /ws
+ENTRYPOINT ["/ros_entrypoint.sh"]
+CMD ["bash"]

@@ -169,14 +169,13 @@ nvidia-smi --query-gpu=memory.used,memory.free,utilization.gpu --format=csv
 
 ## 6. 代理基线
 
-当前主机的 `docker pull` 已经回走代理。容器内仍需要显式配置代理，覆盖以下四类流量：
+当前主机的 `docker pull` 已经回走代理，容器内不再额外配置 Docker pull 代理。容器内只需要显式配置代理，覆盖以下三类流量：
 
 | 类型 | 配置位置 | 目标 |
 |---|---|---|
 | `apt` | `/etc/apt/apt.conf.d/99proxy` | `apt update/install` 走代理 |
 | `pip` | `/etc/pip.conf` | `pip install` 走代理 |
 | Git/GitHub | `/etc/gitconfig` + `HTTP(S)_PROXY` | `git clone/fetch`、GitHub HTTPS 走代理 |
-| 容器内 Docker CLI | `/root/.docker/config.json` + `DOCKER_CONFIG` | 容器内执行 `docker build/run` 时向子容器/构建注入代理 |
 
 统一代理地址：
 
@@ -187,10 +186,10 @@ TOURBOT_NO_PROXY=localhost,127.0.0.1,::1,192.168.0.0/16,10.0.0.0/8,172.16.0.0/12
 
 原则：
 
-- Docker daemon 的 `pull` 代理继续由宿主机配置负责，Compose 文档不重复配置宿主 daemon。
+- Docker daemon 的 `pull` 代理继续由宿主机配置负责；容器内不挂载 Docker socket，不配置 `/root/.docker/config.json`。
 - 镜像构建阶段使用 `ARG` + `ENV`，让 `apt`、`pip`、`git` 在 build 时可用。
 - 容器运行阶段保留 `HTTP_PROXY`、`HTTPS_PROXY`、`NO_PROXY`，让交互式调试时的 `apt/pip/git` 同样可用。
-- `NO_PROXY` 必须覆盖 localhost、局域网、ROS 2 机器人网络和主机名，避免 DDS、TurtleBot4、VNC、Docker socket 等内网流量被错误转发到代理。
+- `NO_PROXY` 必须覆盖 localhost、局域网、ROS 2 机器人网络和主机名，避免 DDS、TurtleBot4、VNC 等内网流量被错误转发到代理。
 - 不建议在仓库中提交包含账号密码的代理 URL；当前代理无凭据，可直接写入文档和 Compose。
 
 ---
@@ -218,7 +217,7 @@ __pycache__
 
 ```bash
 #!/usr/bin/env bash
-set -euo pipefail
+set -eo pipefail
 
 source /opt/ros/jazzy/setup.bash
 
@@ -226,6 +225,7 @@ if [ -f /ws/install/setup.bash ]; then
   source /ws/install/setup.bash
 fi
 
+set -u
 exec "$@"
 ```
 
@@ -253,16 +253,13 @@ ENV https_proxy=${TOURBOT_PROXY}
 ENV all_proxy=${TOURBOT_PROXY}
 ENV no_proxy=${TOURBOT_NO_PROXY}
 ENV PIP_CONFIG_FILE=/etc/pip.conf
-ENV DOCKER_CONFIG=/root/.docker
 
 SHELL ["/bin/bash", "-c"]
 
 RUN set -eux; \
     printf 'Acquire::http::Proxy "%s";\nAcquire::https::Proxy "%s";\n' "${TOURBOT_PROXY}" "${TOURBOT_PROXY}" > /etc/apt/apt.conf.d/99proxy; \
     printf '[global]\nproxy = %s\ntimeout = 120\n' "${TOURBOT_PROXY}" > /etc/pip.conf; \
-    printf '[http]\n	proxy = %s\n[https]\n	proxy = %s\n' "${TOURBOT_PROXY}" "${TOURBOT_PROXY}" > /etc/gitconfig; \
-    mkdir -p /root/.docker; \
-    printf '{"proxies":{"default":{"httpProxy":"%s","httpsProxy":"%s","noProxy":"%s"}}}\n' "${TOURBOT_PROXY}" "${TOURBOT_PROXY}" "${TOURBOT_NO_PROXY}" > /root/.docker/config.json
+    printf '[http]\n	proxy = %s\n[https]\n	proxy = %s\n' "${TOURBOT_PROXY}" "${TOURBOT_PROXY}" > /etc/gitconfig
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     bash-completion \
@@ -286,7 +283,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     mesa-utils \
     x11-apps \
     v4l-utils \
-    docker.io \
     ros-${ROS_DISTRO}-nav2-bringup \
     ros-${ROS_DISTRO}-navigation2 \
     ros-${ROS_DISTRO}-slam-toolbox \
@@ -358,7 +354,6 @@ x-tourbot-common: &tourbot-common
     all_proxy: ${all_proxy:-http://192.168.100.8:31415}
     no_proxy: ${no_proxy:-localhost,127.0.0.1,::1,192.168.0.0/16,10.0.0.0/8,172.16.0.0/12,xiao-5080,5080-MS-eSport-Z890M}
     PIP_CONFIG_FILE: /etc/pip.conf
-    DOCKER_CONFIG: /root/.docker
   volumes:
     - ..:/ws:rw
     - tourbot-build:/ws/build
@@ -366,13 +361,12 @@ x-tourbot-common: &tourbot-common
     - tourbot-log:/ws/log
     - /tmp/.X11-unix:/tmp/.X11-unix:rw
     - /home/xiaozy/.Xauthority:/home/xiaozy/.Xauthority:ro
-    - /var/run/docker.sock:/var/run/docker.sock
     - /dev:/dev
   devices:
     - /dev/dri:/dev/dri
   group_add:
-    - video
-    - render
+    - "44"    # video
+    - "1010"  # vglusers, owns /dev/dri on xiao-5080
   security_opt:
     - seccomp=unconfined
   ulimits:
@@ -386,7 +380,7 @@ services:
 
   build:
     <<: *tourbot-common
-    command: bash -lc "rosdep update && rosdep install --from-paths src --ignore-src -r -y && colcon build --symlink-install"
+    command: bash -lc "apt-get update && rosdep update && rosdep install --from-paths src --ignore-src --skip-keys ament_python -r -y && colcon build --symlink-install"
 
   robot:
     <<: *tourbot-common
@@ -413,7 +407,6 @@ volumes:
 
 - `docker_stuff/compose.yaml` 的 `build.context` 是 `.`，用于只把容器构建文件作为 Docker build context；源码挂载使用 `..:/ws`，确保容器内 `/ws` 是工程根目录。
 - 代理 build args 和运行时环境变量都提供默认值，正常情况下无需额外导出环境变量。
-- `/var/run/docker.sock` 只用于容器内 Docker CLI 复用宿主 Docker daemon；镜像内安装 `docker.io` 是为了提供 `docker` 客户端，不在容器内启动 Docker daemon。这不是 Docker-in-Docker，安全边界等同于授予容器宿主 Docker 控制权，只应在开发容器中使用。
 - `network_mode: host`：ROS 2 DDS、真实机器人发现、Nav2/RViz 通信更直接。
 - `ipc: host`：降低图像、Gazebo、RViz 共享内存问题。
 - `gpus: all`：使用 Compose 原生 GPU 声明，不再写旧式 `runtime: nvidia`。
@@ -461,6 +454,8 @@ rosdep check --from-paths src --ignore-src
 常见处理原则：
 
 - 当前仓库已包含 `apriltag`、`apriltag_msgs`、`apriltag_ros` 源码，rosdep 对这些包应通过 `--ignore-src` 忽略。
+- 当前 Python 包使用 `<buildtool_depend>ament_python</buildtool_depend>`，Jazzy 的 rosdep 无该 key；Compose build 服务用 `--skip-keys ament_python` 跳过，实际构建依赖由基础镜像中的 ament Python 工具链提供。
+- Dockerfile 为缩小镜像会清理 `/var/lib/apt/lists`，因此运行期 `rosdep install` 前必须先 `apt-get update`。
 - TurtleBot4/Gazebo 包应优先通过 apt 安装到镜像，不建议复制宿主机 `/opt/ros`。
 - Python 包优先写入 package.xml 或 Dockerfile，不建议在容器里手工 `pip install` 后不记录。
 
@@ -756,7 +751,6 @@ cat /etc/apt/apt.conf.d/99proxy
 cat /etc/pip.conf
 git config --system --get http.proxy
 git config --system --get https.proxy
-cat /root/.docker/config.json
 ```
 
 快速验证：
