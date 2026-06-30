@@ -3,14 +3,14 @@
 > 编写日期：2026-06-30  
 > 目标主机：`xiao-5080` / `5080-MS-eSport-Z890M` / Ubuntu 24.04  
 > 目标仓库：`/home/xiaozy/4sim/gh-ref/tour-guide-robot/Hyaxon-tour-guide-robot`  
-> 操作原则：所有命令都在 `xiao-5080` 上执行，不在 Dell notebook 本机执行。  
+> 操作原则：所有命令都在 `xiao-5080` 上执行，不在 MacBook Pro 本机执行。  
 > 目标：用当前仓库现有代码复现 TurtleBot4 tour guide robot 的仿真、导航、AprilTag 感知、landmark tour、tag 对齐、门等待、门穿越等已有功能。
 
 ---
 
 ## 0. 当前远端状态核对
 
-在 Dell notebook 只做 SSH 入口：
+在 MacBook Pro 只做 SSH 入口：
 
 ```bash
 ssh xiao-5080
@@ -92,7 +92,7 @@ goal_7: tag_id=7, (2.35, 0.673), EAST
 
 ## 2. 图形桌面接入
 
-如果 VNC 已启动，Dell notebook 上建立 tunnel：
+如果 VNC 已启动，MacBook Pro 上建立 tunnel：
 
 ```bash
 ssh -N -L 5922:127.0.0.1:5922 xiao-5080
@@ -137,6 +137,23 @@ docker compose version
 docker info --format '{{json .Runtimes}}' | grep -o nvidia
 nvidia-smi
 ```
+
+检查容器内 GUI 是否真正走 GPU OpenGL。`nvidia-smi` 能看到 GPU 只说明设备透传成功，不代表 Gazebo/RViz 的 OpenGL 已经硬件加速：
+
+```bash
+docker compose -f docker_stuff/compose.yaml run --rm --no-deps dev bash -lc '
+  nvidia-smi --query-gpu=name,driver_version,memory.used,memory.free,utilization.gpu --format=csv,noheader
+  DISPLAY=:22 glxinfo -B | grep -E "OpenGL vendor|OpenGL renderer|Accelerated"
+  DISPLAY=:22 vglrun -d :0 glxinfo -B | grep -E "OpenGL vendor|OpenGL renderer|OpenGL version"
+'
+```
+
+判断标准：
+
+- 直接 `DISPLAY=:22 glxinfo -B` 在 TurboVNC Xvnc 上通常会显示 `Mesa llvmpipe`、`Accelerated: no`，这是软件渲染。
+- `DISPLAY=:22 vglrun -d :0 glxinfo -B` 应显示 `OpenGL vendor string: NVIDIA Corporation` 和 `OpenGL renderer string: NVIDIA GeForce RTX 5080/PCIe/SSE2`。
+- 本仓库镜像已安装 `virtualgl`，`sim` 和 `robot` Compose 服务已通过 `vglrun -d :0` 启动 GUI。
+- 若 Gazebo/RViz 仍卡顿，用 `nvidia-smi pmon -c 1` 确认 `ruby`/`gz sim`/`rviz2` 是否出现在 GPU 图形进程中。
 
 构建镜像：
 
@@ -226,8 +243,10 @@ docker compose -f docker_stuff/compose.yaml --profile sim up sim
 
 ```bash
 source install/setup.bash
-ros2 launch tourbot_bringup sim.launch.py
+vglrun -d ${VGL_DISPLAY:-:0} ros2 launch tourbot_bringup sim.launch.py
 ```
+
+`vglrun` 很关键：在 TurboVNC `:22` 上直接启动 Gazebo GUI 会落到 Mesa llvmpipe 软件渲染；通过 VirtualGL 转到物理 Xorg `:0` 后，Gazebo/RViz 的 OpenGL renderer 才会变成 RTX 5080。
 
 `use_custom_sim` 默认是 `false`，会走 TurtleBot4 官方 warehouse world，同时开启：
 
@@ -396,8 +415,10 @@ docker compose -f docker_stuff/compose.yaml --profile mission up mission
 
 ```bash
 source install/setup.bash
-ros2 launch tourbot_bringup robot.launch.py
+vglrun -d ${VGL_DISPLAY:-:0} ros2 launch tourbot_bringup robot.launch.py
 ```
+
+`robot.launch.py` 会启动 RViz2，因此也应通过 `vglrun` 运行；`mission.launch.py` 不启动 GUI，可以不包 `vglrun`。
 
 ```bash
 source install/setup.bash
@@ -785,6 +806,52 @@ ros2 launch tourbot_bringup mission.launch.py
 
 Nav2 参数中 `enable_stamped_cmd_vel: true`，行为 server 也发布 `geometry_msgs/msg/TwistStamped`。手动调试不要发 `geometry_msgs/msg/Twist` 到 `/cmd_vel`。
 
+### 9.7 Gazebo/RViz 卡顿时先查 VirtualGL
+
+2026-06-30 实测：`sim` 容器虽然配置了 `gpus: all`、`/dev/dri` 和 NVIDIA capability，但直接在 `DISPLAY=:22` 上运行 OpenGL 时，`glxinfo -B` 显示：
+
+```text
+OpenGL vendor string: Mesa
+OpenGL renderer string: llvmpipe (LLVM 20.1.2, 256 bits)
+Accelerated: no
+```
+
+这说明 GPU 已透传，但 GUI OpenGL 没有使用 GPU 渲染。临时安装 VirtualGL 并执行：
+
+```bash
+DISPLAY=:22 XAUTHORITY=/home/xiaozy/.Xauthority vglrun -d :0 glxinfo -B
+```
+
+可得到：
+
+```text
+OpenGL vendor string: NVIDIA Corporation
+OpenGL renderer string: NVIDIA GeForce RTX 5080/PCIe/SSE2
+OpenGL version string: 4.6.0 NVIDIA 580.126.20
+```
+
+永久修复已固化到：
+
+- `docker_stuff/Dockerfile.jazzy`：增加 VirtualGL apt source，并安装 `virtualgl`。
+- `docker_stuff/compose.yaml`：增加 `VGL_DISPLAY=:0`，`sim` 和 `robot` 命令使用 `vglrun -d :0`。
+
+重建后验证：
+
+```bash
+docker compose -f docker_stuff/compose.yaml build dev
+docker compose -f docker_stuff/compose.yaml run --rm build
+docker compose -f docker_stuff/compose.yaml --profile sim up -d --force-recreate sim
+
+docker compose -f docker_stuff/compose.yaml exec -T sim bash -lc '
+  command -v vglrun
+  DISPLAY=:22 XAUTHORITY=/home/xiaozy/.Xauthority vglrun -d :0 glxinfo -B | grep -E "OpenGL vendor|OpenGL renderer|OpenGL version"
+'
+
+nvidia-smi pmon -c 1
+```
+
+如果 `nvidia-smi pmon` 仍看不到 `ruby`/`gz sim`/`rviz2`，确认 `sim` 是重建后的新容器，而不是旧 digest 容器。
+
 ---
 
 ## 10. 快速恢复命令
@@ -799,6 +866,22 @@ docker compose -f docker_stuff/compose.yaml down
 
 ```bash
 docker compose -f docker_stuff/compose.yaml run --rm build
+```
+
+镜像更新后强制重建所有正在使用 `hyaxon-tour-guide-robot:jazzy` 的服务容器：
+
+```bash
+docker compose -f docker_stuff/compose.yaml down --remove-orphans
+docker compose -f docker_stuff/compose.yaml build dev
+docker compose -f docker_stuff/compose.yaml run --rm build
+docker compose -f docker_stuff/compose.yaml --profile sim --profile robot --profile mission up -d --force-recreate sim robot mission
+```
+
+确认所有项目容器都使用当前镜像 digest：
+
+```bash
+current=$(docker image inspect hyaxon-tour-guide-robot:jazzy --format '{{.Id}}')
+docker inspect hyaxon-tour-guide-robot-sim-1 hyaxon-tour-guide-robot-robot-1 hyaxon-tour-guide-robot-mission-1   --format '{{.Name}} {{.Image}}' | sed "s#${current}#CURRENT_IMAGE#"
 ```
 
 启动仿真：
@@ -845,3 +928,34 @@ source install/setup.bash
 - `/align_to_apriltag`、`/wait_for_tag_removed`、`/door_traverse` 三个自定义 action 均可成功返回。
 - `mission.launch.py` 可启动 perception、三个行为 server 和 `tour_deliberation_node`，并能按 landmarks 调用 Nav2/action。
 - 若要自动完成完整 tour，Gazebo world 必须具备与 `landmarks.yaml` 匹配的可见 AprilTag 和可通行地图；当前仓库 world 还未满足这一点，因此自动 tour 的最后一步依赖场景资产补齐。
+
+---
+
+## 12. 2026-06-30 xiao-5080 当前验收记录
+
+本次远端实操后的状态：
+
+- 新镜像：`hyaxon-tour-guide-robot:jazzy` -> `sha256:14a9cb169bd5433ca936b10065da8bbc6e769c1dad72f76327eb6635644e5f11`。
+- `sim`、`robot`、`mission` 三个服务容器均已 `--force-recreate` 到该镜像 digest。
+- 当前保持 `sim` 运行；`robot`、`mission` 已停掉但容器保留，避免和 `sim` 内置 Nav2/RViz 在同一 `ROS_DOMAIN_ID=42` 里产生重复 graph。
+- 旧 one-off `hyaxon-tour-guide-robot-dev-run-414c13038bbe` 已移除，不再占用旧 digest。
+- 容器内直接 `DISPLAY=:22 glxinfo -B` 仍是 `Mesa llvmpipe`，但 `DISPLAY=:22 vglrun -d :0 glxinfo -B` 已显示 `NVIDIA GeForce RTX 5080/PCIe/SSE2`。
+- `nvidia-smi pmon -c 1` 可看到 `gz sim server`、`gz sim gui`、`rviz2` 作为 GPU 图形进程。
+- `/controller_manager/list_controllers` 可用，返回：`diffdrive_controller` active、`joint_state_broadcaster` active。
+- 关键 topic 已出现：`/clock`、`/map`、`/odom`、`/scan`、`/tf`、`/oakd/rgb/preview/image_raw`、`/oakd/rgb/preview/camera_info`、`/oakd/rgb/preview/depth`、`/oakd/rgb/preview/depth/points`。
+- `sim` 日志尾部未见 `symbol lookup error`、`undefined symbol`、`process has died`、`Could not contact service`、`SIGKILL`。
+
+恢复当前干净仿真状态：
+
+```bash
+docker compose -f docker_stuff/compose.yaml --profile robot --profile mission stop robot mission
+docker compose -f docker_stuff/compose.yaml --profile sim up -d --force-recreate sim
+```
+
+需要单独验证 mission graph 时，再启动：
+
+```bash
+docker compose -f docker_stuff/compose.yaml --profile mission up -d --force-recreate mission
+```
+
+不要在 smoke test 时同时运行 `sim` 内置 Nav2 和 `robot.launch.py` 的第二套 Nav2，除非使用不同 `ROS_DOMAIN_ID` 做隔离。

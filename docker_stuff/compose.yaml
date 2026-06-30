@@ -21,6 +21,7 @@ x-tourbot-common: &tourbot-common
     DISPLAY: ${DISPLAY:-:22}
     XAUTHORITY: ${XAUTHORITY:-/home/xiaozy/.Xauthority}
     QT_X11_NO_MITSHM: "1"
+    VGL_DISPLAY: ${VGL_DISPLAY:-:0}
     NVIDIA_VISIBLE_DEVICES: all
     NVIDIA_DRIVER_CAPABILITIES: compute,utility,graphics,display
     HTTP_PROXY: ${HTTP_PROXY:-http://192.168.100.8:31415}
@@ -63,7 +64,7 @@ services:
   robot:
     <<: *tourbot-common
     profiles: ["robot"]
-    command: bash -lc "source install/setup.bash && ros2 launch tourbot_bringup robot.launch.py"
+    command: bash -lc "source install/setup.bash && vglrun -d :0 ros2 launch tourbot_bringup robot.launch.py"
 
   mission:
     <<: *tourbot-common
@@ -73,7 +74,7 @@ services:
   sim:
     <<: *tourbot-common
     profiles: ["sim"]
-    command: bash -lc "source install/setup.bash && ros2 launch tourbot_bringup sim.launch.py"
+    command: bash -lc "source install/setup.bash && vglrun -d :0 ros2 launch tourbot_bringup sim.launch.py"
 
 volumes:
   tourbot-build:

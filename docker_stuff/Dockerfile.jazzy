@@ -27,6 +27,13 @@ RUN set -eux; \
     printf '[global]\nproxy = %s\ntimeout = 120\n' "${TOURBOT_PROXY}" > /etc/pip.conf; \
     printf '[http]\n\tproxy = %s\n[https]\n\tproxy = %s\n' "${TOURBOT_PROXY}" "${TOURBOT_PROXY}" > /etc/gitconfig
 
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends ca-certificates curl gnupg; \
+    curl -fsSL https://packagecloud.io/dcommander/virtualgl/gpgkey | gpg --dearmor -o /etc/apt/trusted.gpg.d/VirtualGL.gpg; \
+    printf 'deb [signed-by=/etc/apt/trusted.gpg.d/VirtualGL.gpg] https://packagecloud.io/dcommander/virtualgl/any/ any main\n' > /etc/apt/sources.list.d/VirtualGL.list; \
+    rm -rf /var/lib/apt/lists/*
+
 # Keep ROS client and diagnostic packages ABI-aligned with newer Nav2 / ros2_control packages.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-${ROS_DISTRO}-rclcpp \
@@ -56,6 +63,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxcb1 \
     libxcb-xinerama0 \
     mesa-utils \
+    virtualgl \
     x11-apps \
     v4l-utils \
     ros-${ROS_DISTRO}-nav2-bringup \
