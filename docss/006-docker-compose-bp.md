@@ -338,7 +338,7 @@ x-tourbot-common: &tourbot-common
   tty: true
   working_dir: /ws
   environment:
-    ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-22}
+    ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-42}
     RMW_IMPLEMENTATION: ${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}
     DISPLAY: ${DISPLAY:-:22}
     XAUTHORITY: ${XAUTHORITY:-/home/xiaozy/.Xauthority}
@@ -509,6 +509,8 @@ export DISPLAY=:22
 
 ### 10.1 真实机器人/真实 ROS 网络
 
+`robot` 服务只启动本仓库的 localization、Nav2 和 RViz，不启动真实 TurtleBot4 底盘、传感器驱动或 `robot_state_publisher`。因此真实机器人模式的前置条件是：TurtleBot4 端已经在同一个干净的 `ROS_DOMAIN_ID` 上发布 `/scan`、`/odom`、`/tf`、`/tf_static`，以及最好发布 `/robot_description`。
+
 终端 1：启动 VNC 并进入桌面。
 
 ```bash
@@ -522,13 +524,72 @@ cd /home/xiaozy/4sim/gh-ref/tour-guide-robot/Hyaxon-tour-guide-robot
 docker compose -f docker_stuff/compose.yaml run --rm build
 ```
 
-终端 3：启动导航。
+终端 3：先确认当前 domain 是否能看到真实机器人话题。默认 domain 是 `42`；如果真实 TurtleBot4 使用其它 domain，必须显式覆盖。
+
+```bash
+docker compose -f docker_stuff/compose.yaml run --rm dev bash -lc '
+  ros2 topic list | sort | grep -E "^/(scan|odom|tf|tf_static|robot_description)$" || true
+'
+```
+
+如果没有 `/scan`、`/odom`、`/tf`，RViz 只能显示本容器能发布的地图/导航状态，不会显示真实机器人、激光或定位。
+
+终端 4：启动导航。
 
 ```bash
 docker compose -f docker_stuff/compose.yaml --profile robot up robot
 ```
 
-终端 4：确认 Nav2/RViz 正常后启动 mission。
+若真实机器人使用固定 domain，例如 `0`，用：
+
+```bash
+ROS_DOMAIN_ID=0 docker compose -f docker_stuff/compose.yaml --profile robot up robot
+```
+
+终端 5：另开 shell 做启动后验收。
+
+```bash
+docker compose -f docker_stuff/compose.yaml exec robot bash -lc '
+  source /opt/ros/jazzy/setup.bash
+  [ -f /ws/install/setup.bash ] && source /ws/install/setup.bash
+  echo "ROS_DOMAIN_ID=$ROS_DOMAIN_ID"
+  ros2 topic info /map || true
+  ros2 topic info /scan || true
+  ros2 topic info /odom || true
+  ros2 topic info /robot_description || true
+  ros2 lifecycle get /map_server || true
+  ros2 lifecycle get /amcl || true
+'
+```
+
+通过标准：
+
+- `/map` 有 `Publisher count: 1`，RViz 能显示地图。
+- `/scan`、`/odom`、`/tf` 有真实机器人发布者，RViz 才能显示激光、里程计和 TF。
+- `/robot_description` 有真实 TurtleBot4 或兼容模型发布者，RViz 的 RobotModel 才能显示机器人模型。
+- `/map_server` 和 `/amcl` 应为 `active [3]`。
+
+当前 `xiao-5080` 上的已知问题（2026-06-30）：`nav2_lifecycle_manager` 可能因 ROS Jazzy apt 包 ABI 不一致崩溃，日志形如：
+
+```text
+nav2_lifecycle_manager/lifecycle_manager: symbol lookup error: libnav2_lifecycle_manager_core.so: undefined symbol: diagnostic_updater::Updater(...)
+```
+
+该问题会导致 `map_server`、`amcl` 和 Nav2 节点停在 `unconfigured` 或等待 lifecycle transition，表现为 RViz 空白。临时确认地图链路可用的方法是手动激活 `map_server`：
+
+```bash
+docker compose -f docker_stuff/compose.yaml exec robot bash -lc '
+  source /opt/ros/jazzy/setup.bash
+  ros2 lifecycle set /map_server configure || true
+  ros2 lifecycle set /map_server activate || true
+  ros2 lifecycle get /map_server
+  ros2 topic info /map -v
+'
+```
+
+这只能让 RViz 看到地图，不能替代完整 Nav2 lifecycle 管理。正式导航需要使用 ABI 一致的 Nav2/diagnostic_updater 包组合，或换用已验证的 ROS Jazzy/Nav2 基础镜像。
+
+终端 6：确认 Nav2/RViz 正常后启动 mission。不要在 `/scan`、`/odom`、`/tf`、`/map` 未就绪前启动 mission。
 
 ```bash
 docker compose -f docker_stuff/compose.yaml --profile mission up mission
@@ -597,17 +658,27 @@ DISPLAY=:0 xhost +si:localuser:root
 
 ## 12. ROS 2 网络建议
 
+### ROS_DOMAIN_ID 串话排查
+
+本工程最初为了对应 VNC `:22` 使用 `ROS_DOMAIN_ID=22`，但在 `xiao-5080` 上已确认该 domain 会看到其它 R1Mk3 仿真节点：`/robot_state_publisher` 发布的 `/robot_description` 内容为 `<robot name="R1Mk3">`。TurtleBot4 的 `navigation.rviz` 中 `RobotModel` 默认订阅全局 `robot_description`，因此 RViz 会尝试加载 `package://R1Mk3/...` mesh。
+
+结论：这不是当前仓库引用了 R1Mk3 资源，而是同一 ROS domain 内全局话题串话。默认 domain 已改为 `42`。如果连接真实 TurtleBot4，必须让机器人端和容器端使用同一个干净 domain；如果机器人固定使用其它 domain，应显式覆盖：
+
+```bash
+ROS_DOMAIN_ID=<robot-domain> docker compose -f docker_stuff/compose.yaml --profile robot up robot
+```
+
 Compose 中默认：
 
 ```yaml
-ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-22}
+ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-42}
 RMW_IMPLEMENTATION: ${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}
 ```
 
 建议：
 
 - 如果局域网已有其它 ROS 2 系统，先确认 domain，避免串话。
-- xiaozy 的 VNC display 是 `:22`，`ROS_DOMAIN_ID=22` 只是便于记忆，不是技术绑定。
+- 不要把 xiaozy 的 VNC display `:22` 直接复用为 ROS domain。当前主机上 `ROS_DOMAIN_ID=22` 已能看到 R1Mk3 的 `/robot_description`，因此本工程默认改为 `ROS_DOMAIN_ID=42`。
 - 若 TurtleBot4 已使用固定 domain，应以机器人实际配置为准，例如：
 
 ```bash
@@ -763,7 +834,44 @@ git ls-remote https://github.com/ros2/ros2.git HEAD
 
 如果 `git` 或 `pip` 仍不走代理，优先检查是否被命令行参数、用户级配置或 `NO_PROXY` 覆盖。
 
-### 15.6 GPU 显存不足
+### 15.6 RViz 打开但空白
+
+按顺序检查：
+
+```bash
+docker compose -f docker_stuff/compose.yaml logs --no-color --tail=240 robot | grep -E "symbol lookup error|lifecycle_manager|map_server|amcl|ERROR"
+
+docker compose -f docker_stuff/compose.yaml exec robot bash -lc '
+  source /opt/ros/jazzy/setup.bash
+  echo "ROS_DOMAIN_ID=$ROS_DOMAIN_ID"
+  ros2 topic info /map || true
+  ros2 topic info /scan || true
+  ros2 topic info /odom || true
+  ros2 topic info /robot_description || true
+  ros2 lifecycle get /map_server || true
+  ros2 lifecycle get /amcl || true
+'
+```
+
+判读：
+
+- `/map` 没有 publisher 且 `/map_server` 不是 `active [3]`：地图服务器未激活，RViz 不会显示地图。
+- 日志含 `nav2_lifecycle_manager ... symbol lookup error`：当前镜像内 Nav2 lifecycle manager 与 `diagnostic_updater` ABI 不一致。临时可手动激活 `/map_server` 验证地图，但完整 Nav2 需要换用 ABI 一致的包组合或基础镜像。
+- `/scan`、`/odom`、`/tf` 没有 publisher：没有接入真实 TurtleBot4 或 domain 不一致，RViz 不会显示激光/机器人运动。
+- `/robot_description` 没有 publisher：RViz 的 RobotModel 不会显示机器人模型；如果它发布了 R1Mk3，则是 ROS domain 串话，需换干净 domain。
+
+临时只显示地图：
+
+```bash
+docker compose -f docker_stuff/compose.yaml exec robot bash -lc '
+  source /opt/ros/jazzy/setup.bash
+  ros2 lifecycle set /map_server configure || true
+  ros2 lifecycle set /map_server activate || true
+  ros2 topic info /map -v
+'
+```
+
+### 15.7 GPU 显存不足
 
 检查：
 

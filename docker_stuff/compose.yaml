@@ -16,7 +16,7 @@ x-tourbot-common: &tourbot-common
   tty: true
   working_dir: /ws
   environment:
-    ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-22}
+    ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-42}
     RMW_IMPLEMENTATION: ${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}
     DISPLAY: ${DISPLAY:-:22}
     XAUTHORITY: ${XAUTHORITY:-/home/xiaozy/.Xauthority}
