@@ -205,9 +205,13 @@ def generate_launch_description():
                 tourbot_bringup,
                 'worlds',
                 'cardboard_city',
-                'world',
+                'world_no_sensors',
             ]),
-            description='Custom Gazebo world name or path without .sdf suffix',
+            description=(
+                'Custom Gazebo world name or path without .sdf suffix. '
+                'The default disables Gazebo render sensors for the headless '
+                'AprilTag door demo; pass the full world path for camera/lidar tests.'
+            ),
         ),
 
         DeclareLaunchArgument(

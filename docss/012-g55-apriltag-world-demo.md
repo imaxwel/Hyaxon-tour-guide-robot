@@ -129,11 +129,21 @@ src/tourbot_mission/tourbot_mission/door_apriltag_demo_node.py
 
 终端 A：启动 custom world + TurtleBot4，不启动 Nav2/RViz。
 
+`use_custom_sim:=true` 的默认 `custom_world` 现在指向：
+
+```text
+/ws/install/tourbot_bringup/share/tourbot_bringup/worlds/cardboard_city/world_no_sensors.sdf
+```
+
+这个 world 保留 AprilTag / 门 / 纸箱视觉资产，但不加载 `gz-sim-sensors-system`。当前门 demo 使用可控 `/detections`，不依赖 Gazebo 相机或雷达渲染，因此该配置更适合 headless Docker 启动。
+
 ```bash
 cd ~/4sim/gh-ref/tour-guide-robot/Hyaxon-tour-guide-robot
 docker compose -f docker_stuff/compose.yaml run --rm --no-deps dev bash -lc '
   source install/setup.bash
   export ROS_DOMAIN_ID=77
+  export GZ_PARTITION=tourbot_apriltag_77
+  export IGN_PARTITION=$GZ_PARTITION
   ros2 launch tourbot_bringup sim.launch.py \
     use_custom_sim:=true \
     start_navigation:=false \
@@ -168,9 +178,10 @@ Door AprilTag demo complete: closed tag detected, tag removed, and door traversa
 已在远端 `xiao-5080` 的 Docker 环境验证：
 
 - `colcon build --symlink-install --packages-select tourbot_bringup tourbot_mission` 通过。
-- `sim.launch.py use_custom_sim:=true start_navigation:=false custom_gz_args:="-r -s -v 2"` 能启动 `world_demo`，并创建合法 `/world/world_demo/...` bridge。
+- `sim.launch.py use_custom_sim:=true start_navigation:=false custom_gz_args:="-r -s -v 2"` 默认加载 `world_no_sensors.sdf`，能启动 `world_demo`，并创建合法 `/world/world_demo/...` bridge。
+- `joint_state_broadcaster` 与 `diffdrive_controller` 能正常 load / configure / activate；原先由 Gazebo 先崩溃导致的 controller spawner 超时不再出现。
 - `/odom` 在 2 秒内出现。
-- `door_apriltag_demo.launch.py tag_id:=1` 在 15 秒内完整返回成功。
+- `door_apriltag_demo.launch.py tag_id:=1` 在约 15 秒内打印完整成功日志；launch 内的 action servers 会继续驻留，测试脚本用 `timeout` / Ctrl-C 结束时会出现正常清理日志。
 
 ## 6.边界说明
 
@@ -186,5 +197,13 @@ world 中已经有真实 8 个 AprilTag 可视模型。若要进一步做完整�
 - tag 纹理在 `gz sim` / OGRE2 中是否清晰、未镜像。
 - `apriltag_ros` 是否能从 `/oakd/rgb/preview/image_raw` 发布真实 `/detections`。
 - 门 opening 事件如何驱动 Gazebo 中真实 tag/门板消失或移动。
+
+若要恢复完整 Gazebo 相机 / 雷达传感器 world，可显式传入原 world：
+
+```bash
+custom_world:=/ws/install/tourbot_bringup/share/tourbot_bringup/worlds/cardboard_city/world
+```
+
+但在 `xiao-5080` 当前 Ubuntu 24.04 / ROS 2 Jazzy / Gazebo Harmonic / RTX 5080 Docker 环境中，该 full-sensors world 可能触发 FAQ 013 记录的 OGRE2/EGL server-side rendering 崩溃。
 
 也就是说，本次已经补齐 world 资产和门行为演示闭环；真实视觉识别闭环是下一层集成验证。
