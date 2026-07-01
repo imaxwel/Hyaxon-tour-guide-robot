@@ -83,6 +83,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-${ROS_DISTRO}-turtlebot4-simulator \
     && rm -rf /var/lib/apt/lists/*
 
+# Workaround: remove OGRE1 render engine plugin to prevent symbol clash with
+# OgreNext 2.3 (OGRE2).  Both plugins coexist in the same directory and
+# RenderEngineManager loads both into the same process, causing Ogre::Node
+# symbols from libOgreMain.so.1.9.0 to collide with OgreNext equivalents
+# and segfault in gz-sim-sensors-system RenderThread.
+# See: docss/015-o46-gazebo-apriltag-door-demo-plan.md
+RUN rm -f /opt/ros/jazzy/opt/gz_rendering_vendor/lib/gz-rendering-8/engine-plugins/libgz-rendering*-ogre.so* \
+    && rm -f /opt/ros/jazzy/opt/gz_rendering_vendor/lib/gz-rendering-8/engine-plugins/libgz-rendering8-ogre.so*
+
 RUN rosdep init 2>/dev/null || true
 
 COPY ros_entrypoint.sh /ros_entrypoint.sh
