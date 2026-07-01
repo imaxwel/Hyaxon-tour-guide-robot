@@ -162,6 +162,43 @@ docker compose -f docker_stuff/compose.yaml run --rm --no-deps dev bash -lc '
 '
 ```
 
+### 4.1 UI 视觉闭环 demo
+
+如果需要直观看到门 / tag / 检测框，不要再启动上面的“终端 B”。改用下面这个视觉闭环入口作为新的终端 B：
+
+```bash
+cd ~/4sim/gh-ref/tour-guide-robot/Hyaxon-tour-guide-robot
+docker compose -f docker_stuff/compose.yaml run --rm --no-deps dev bash -lc '
+  source install/setup.bash
+  export ROS_DOMAIN_ID=77
+  export GZ_PARTITION=tourbot_apriltag_77
+  export IGN_PARTITION=$GZ_PARTITION
+  ros2 launch tourbot_bringup door_apriltag_visual_demo.launch.py \
+    tag_id:=1 \
+    start_image_view:=true
+'
+```
+
+该 launch 会启动：
+
+- `door_visual_camera_node`：发布 `/oakd/rgb/preview/image_raw`、`/oakd/rgb/preview/camera_info` 和带叠加信息的 `/door_demo/visualization/image_raw`。
+- `apriltag_ros`：从图像真实检测 AprilTag，并发布 `/detections`。
+- 原来的三个 action server：`/align_to_apriltag`、`/wait_for_tag_removed`、`/door_traverse`。
+- `image_view`：打开 UI 窗口显示 `/door_demo/visualization/image_raw`。
+
+视觉闭环路径是：
+
+```text
+visual camera image -> apriltag_ros -> /detections -> align_to_apriltag -> wait_for_tag_removed -> door_traverse
+```
+
+窗口中的预期现象：
+
+1. 初始显示 `DOOR CLOSED - tag visible`，画面中央有 AprilTag。
+2. `apriltag_ros /detections ids=[1]`，并在 tag 上画绿色检测框。
+3. demo 触发开门后显示 `DOOR OPEN - tag removed`，检测列表变成 `ids=[]`。
+4. 随后日志打印 `door_traverse succeeded` 和 `Door AprilTag demo complete`。
+
 预期关键日志：
 
 ```text
@@ -182,6 +219,7 @@ Door AprilTag demo complete: closed tag detected, tag removed, and door traversa
 - `joint_state_broadcaster` 与 `diffdrive_controller` 能正常 load / configure / activate；原先由 Gazebo 先崩溃导致的 controller spawner 超时不再出现。
 - `/odom` 在 2 秒内出现。
 - `door_apriltag_demo.launch.py tag_id:=1` 在约 15 秒内打印完整成功日志；launch 内的 action servers 会继续驻留，测试脚本用 `timeout` / Ctrl-C 结束时会出现正常清理日志。
+- `door_apriltag_visual_demo.launch.py tag_id:=1 start_image_view:=false` 已验证可由 `apriltag_ros` 从 `/oakd/rgb/preview/image_raw` 检测出 tag，并完成同一套门行为链路。
 
 ## 6.边界说明
 
@@ -205,5 +243,7 @@ custom_world:=/ws/install/tourbot_bringup/share/tourbot_bringup/worlds/cardboard
 ```
 
 但在 `xiao-5080` 当前 Ubuntu 24.04 / ROS 2 Jazzy / Gazebo Harmonic / RTX 5080 Docker 环境中，该 full-sensors world 可能触发 FAQ 013 记录的 OGRE2/EGL server-side rendering 崩溃。
+
+视觉闭环入口 `door_apriltag_visual_demo.launch.py` 不依赖 Gazebo render sensors。它使用独立 ROS camera publisher 生成可视化相机图像，再由 `apriltag_ros` 做真实图像检测。这不是 Gazebo OAK-D 的物理渲染相机，但已经覆盖“图像输入 -> AprilTag 检测 -> 行为决策”的 perception-in-the-loop 链路。
 
 也就是说，本次已经补齐 world 资产和门行为演示闭环；真实视觉识别闭环是下一层集成验证。

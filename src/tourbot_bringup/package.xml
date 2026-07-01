@@ -17,6 +17,11 @@
   <exec_depend>rclpy</exec_depend>
   <exec_depend>ros2launch</exec_depend>
   <exec_depend>tf2_ros</exec_depend>
+  <exec_depend>apriltag_ros</exec_depend>
+  <exec_depend>image_view</exec_depend>
+  <exec_depend>tourbot_behaviors</exec_depend>
+  <exec_depend>tourbot_mission</exec_depend>
+  <exec_depend>tourbot_perception</exec_depend>
   
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>

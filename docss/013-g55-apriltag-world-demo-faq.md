@@ -171,3 +171,44 @@ Door AprilTag demo complete
 ```
 
 如果用 `timeout` 或 Ctrl-C 结束 Terminal B，后面的 `KeyboardInterrupt`、`publisher's context is invalid`、`exit code -2` 属于清理阶段噪声，不表示门流程失败。
+
+## Q11：如何获得 UI 界面的直观可视化结果？
+
+不要把 UI 闭环建在 Gazebo `gz-sim-sensors-system` 上；在 `xiao-5080` 当前环境里，即使加 `--headless-rendering`，full-sensors world 仍会在 Gazebo Sensors render thread 里 139。
+
+当前实现的可视化闭环入口是：
+
+```bash
+ros2 launch tourbot_bringup door_apriltag_visual_demo.launch.py \
+  tag_id:=1 \
+  start_image_view:=true
+```
+
+它会打开 `image_view` 窗口显示：
+
+```text
+/door_demo/visualization/image_raw
+```
+
+同时内部链路是：
+
+```text
+/oakd/rgb/preview/image_raw
+  -> apriltag_ros
+  -> /detections
+  -> /align_to_apriltag
+  -> /wait_for_tag_removed
+  -> /door_traverse
+```
+
+也就是说，`/detections` 不再由 demo 节点直接伪造，而是由 `apriltag_ros` 对图像流真实检测得到。UI 画面会显示 `DOOR CLOSED - tag visible`、检测框、`ids=[1]`，开门后显示 `DOOR OPEN - tag removed`、`ids=[]`。
+
+如果只是自动化验证，不想弹出窗口：
+
+```bash
+ros2 launch tourbot_bringup door_apriltag_visual_demo.launch.py \
+  tag_id:=1 \
+  start_image_view:=false
+```
+
+注意：这个 visual launch 已经包含 action servers 和 demo node，不能和旧的 `door_apriltag_demo.launch.py` 在同一 `ROS_DOMAIN_ID` 里同时运行。

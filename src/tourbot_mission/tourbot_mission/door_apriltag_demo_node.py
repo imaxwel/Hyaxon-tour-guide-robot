@@ -10,6 +10,7 @@ from rclpy.action import ActionClient
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from sensor_msgs.msg import CameraInfo
+from std_msgs.msg import Bool
 
 from tourbot_interfaces.action import AlignToAprilTag
 from tourbot_interfaces.action import DoorTraverse
@@ -32,6 +33,7 @@ class DoorAprilTagDemoNode(Node):
         self.declare_parameter("tag_id", 1)
         self.declare_parameter("detections_topic", "/detections")
         self.declare_parameter("camera_info_topic", "/oakd/rgb/preview/camera_info")
+        self.declare_parameter("tag_visible_topic", "/door_demo/tag_visible")
         self.declare_parameter("image_width", 640)
         self.declare_parameter("image_height", 480)
         self.declare_parameter("tag_center_x", 320.0)
@@ -46,6 +48,8 @@ class DoorAprilTagDemoNode(Node):
         self.declare_parameter("door_forward_speed", 0.18)
         self.declare_parameter("start_delay_sec", 3.0)
         self.declare_parameter("publish_demo_odom", False)
+        self.declare_parameter("publish_synthetic_detections", True)
+        self.declare_parameter("publish_camera_info", True)
         self.declare_parameter("demo_odom_topic", "/door_demo/odom")
         self.declare_parameter("cmd_vel_topic", "/cmd_vel")
 
@@ -70,9 +74,16 @@ class DoorAprilTagDemoNode(Node):
         self.door_forward_speed = float(self.get_parameter("door_forward_speed").value)
         self.start_delay_sec = float(self.get_parameter("start_delay_sec").value)
         self.publish_demo_odom = bool(self.get_parameter("publish_demo_odom").value)
+        self.publish_synthetic_detections = bool(
+            self.get_parameter("publish_synthetic_detections").value
+        )
+        self.publish_camera_info_enabled = bool(
+            self.get_parameter("publish_camera_info").value
+        )
 
         detections_topic = self.get_parameter("detections_topic").value
         camera_info_topic = self.get_parameter("camera_info_topic").value
+        tag_visible_topic = self.get_parameter("tag_visible_topic").value
         demo_odom_topic = self.get_parameter("demo_odom_topic").value
         cmd_vel_topic = self.get_parameter("cmd_vel_topic").value
 
@@ -91,6 +102,11 @@ class DoorAprilTagDemoNode(Node):
         self.camera_info_pub = self.create_publisher(
             CameraInfo,
             camera_info_topic,
+            10,
+        )
+        self.tag_visible_pub = self.create_publisher(
+            Bool,
+            tag_visible_topic,
             10,
         )
         self.demo_odom_pub = self.create_publisher(
@@ -122,6 +138,13 @@ class DoorAprilTagDemoNode(Node):
         )
 
         self.create_timer(0.1, self.publish_camera_state)
+
+        mode = (
+            "synthetic detections"
+            if self.publish_synthetic_detections
+            else "visual image -> apriltag_ros -> detections"
+        )
+        self.get_logger().info(f"Door AprilTag demo mode: {mode}.")
 
         if self.publish_demo_odom:
             self.create_timer(0.05, self.publish_integrated_demo_odom)
@@ -213,16 +236,22 @@ class DoorAprilTagDemoNode(Node):
         return detection
 
     def publish_camera_state(self) -> None:
-        self.camera_info_pub.publish(self.make_camera_info())
+        visible_msg = Bool()
+        visible_msg.data = bool(self.tag_visible)
+        self.tag_visible_pub.publish(visible_msg)
 
-        msg = AprilTagDetectionArray()
-        msg.header.stamp = self.get_clock().now().to_msg()
-        msg.header.frame_id = "oakd_rgb_camera_optical_frame"
+        if self.publish_camera_info_enabled:
+            self.camera_info_pub.publish(self.make_camera_info())
 
-        if self.tag_visible:
-            msg.detections.append(self.make_detection())
+        if self.publish_synthetic_detections:
+            msg = AprilTagDetectionArray()
+            msg.header.stamp = self.get_clock().now().to_msg()
+            msg.header.frame_id = "oakd_rgb_camera_optical_frame"
 
-        self.detections_pub.publish(msg)
+            if self.tag_visible:
+                msg.detections.append(self.make_detection())
+
+            self.detections_pub.publish(msg)
 
     def wait_for_server(self, client: ActionClient, name: str) -> bool:
         self.get_logger().info(f"Waiting for {name} action server...")

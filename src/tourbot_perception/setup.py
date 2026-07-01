@@ -26,6 +26,8 @@ setup(
     },
     entry_points={
         'console_scripts': [
+            'door_visual_camera_node = '
+            'tourbot_perception.door_visual_camera_node:main',
         ],
     },
 )
