@@ -60,6 +60,7 @@ def generate_launch_description():
             "world_name": world_name,
             "start_delay_sec": "4.0",
             "start_image_view": start_image_view,
+            "set_initial_robot_pose": "false",
         }.items(),
     )
 

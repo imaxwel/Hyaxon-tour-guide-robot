@@ -16,6 +16,11 @@ def generate_launch_description():
     missing_duration_sec = LaunchConfiguration("missing_duration_sec")
     door_forward_distance = LaunchConfiguration("door_forward_distance")
     door_forward_speed = LaunchConfiguration("door_forward_speed")
+    set_initial_robot_pose = LaunchConfiguration("set_initial_robot_pose")
+    initial_robot_x = LaunchConfiguration("initial_robot_x")
+    initial_robot_y = LaunchConfiguration("initial_robot_y")
+    initial_robot_z = LaunchConfiguration("initial_robot_z")
+    initial_robot_yaw = LaunchConfiguration("initial_robot_yaw")
 
     tourbot_perception = FindPackageShare("tourbot_perception")
     apriltag_config = PathJoinSubstitution(
@@ -124,6 +129,27 @@ def generate_launch_description():
         ],
     )
 
+    initial_robot_pose_setter = Node(
+        package="tourbot_bringup",
+        executable="gazebo_entity_pose_setter",
+        name="gazebo_demo_initial_robot_pose",
+        output="screen",
+        condition=IfCondition(set_initial_robot_pose),
+        parameters=[
+            {
+                "world_name": world_name,
+                "entity_name": "turtlebot4",
+                "x": initial_robot_x,
+                "y": initial_robot_y,
+                "z": initial_robot_z,
+                "yaw": initial_robot_yaw,
+                "service_timeout_ms": 3000,
+                "repeat_count": 12,
+                "repeat_period_sec": 0.5,
+            }
+        ],
+    )
+
     return LaunchDescription(
         [
             DeclareLaunchArgument(
@@ -171,9 +197,38 @@ def generate_launch_description():
                 default_value="0.16",
                 description="Forward speed used by the door traversal action.",
             ),
+            DeclareLaunchArgument(
+                "set_initial_robot_pose",
+                default_value="true",
+                description=(
+                    "Set turtlebot4 to the default door observation pose. "
+                    "Keep true for the two-terminal Gazebo demo."
+                ),
+            ),
+            DeclareLaunchArgument(
+                "initial_robot_x",
+                default_value="3.14",
+                description="Initial robot x pose for the Gazebo door demo.",
+            ),
+            DeclareLaunchArgument(
+                "initial_robot_y",
+                default_value="0.0",
+                description="Initial robot y pose for the Gazebo door demo.",
+            ),
+            DeclareLaunchArgument(
+                "initial_robot_z",
+                default_value="0.0",
+                description="Initial robot z pose for the Gazebo door demo.",
+            ),
+            DeclareLaunchArgument(
+                "initial_robot_yaw",
+                default_value="-1.5708",
+                description="Initial robot yaw facing the tag 1 outward door.",
+            ),
             apriltag_detector,
             door_state_controller,
             image_view,
+            TimerAction(period=0.5, actions=[initial_robot_pose_setter]),
             align_to_apriltag_server,
             wait_for_tag_removed_server,
             door_behavior_server,

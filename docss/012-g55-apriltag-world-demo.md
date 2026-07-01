@@ -242,6 +242,9 @@ src/tourbot_perception/config/apriltags_36h11_gazebo.yaml
 cd ~/4sim/gh-ref/tour-guide-robot/Hyaxon-tour-guide-robot
 docker compose -f docker_stuff/compose.yaml run --rm --no-deps dev bash -lc '
   source install/setup.bash
+  export ROS_DOMAIN_ID=77
+  export GZ_PARTITION=tourbot_apriltag_77
+  export IGN_PARTITION=$GZ_PARTITION
   ros2 launch tourbot_bringup door_apriltag_gazebo_world_demo.launch.py \
     ros_domain_id:=77 \
     gz_partition:=tourbot_apriltag_77 \
@@ -279,6 +282,8 @@ docker compose -f docker_stuff/compose.yaml run --rm --no-deps dev bash -lc '
   ros2 launch tourbot_bringup door_apriltag_gazebo_demo.launch.py tag_id:=1
 '
 ```
+
+`door_apriltag_gazebo_demo.launch.py` 默认会启动 `gazebo_entity_pose_setter`，把已经运行的 `turtlebot4` 设置到 tag 1 门前观察位。因此两终端模式下不需要手动调用 `gz service set_pose`。
 
 关键实现点：
 
@@ -320,3 +325,4 @@ docker compose -f docker_stuff/compose.yaml run --rm --no-deps dev bash -lc '
 - 默认仍使用 `world_no_sensors.sdf`。这不是“无相机”，而是去掉 world 级 sensors-system，让 TurtleBot4 robot model 自带的 OAK-D sensors-system 唯一生效。
 - `world.sdf` 也同步了独立门板模型，方便 `set_pose` 控制，但 full world 仍不推荐作为默认入口。
 - 如果 apt upgrade 或重建基础镜像后 OGRE1 插件文件恢复，需要按 015 文档重新构建 Dockerfile 修复层。
+- 完整 3D GUI/headless 操作 SOP 见 `docss/016-gazebo-apriltag-door-3d-sop.md`。
