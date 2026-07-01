@@ -24,7 +24,7 @@ Gazebo 3D world
 
 本 SOP 有三种入口：
 
-- GUI 一键模式：打开 Gazebo 3D 界面，适合人工观察。
+- GUI 一键模式：Gazebo server 仍以 headless 方式运行，另起独立 Gazebo GUI client 观察 3D 场景。
 - Headless 一键模式：无窗口，适合稳定回归。
 - 两终端模式：先启动 3D world，再单独启动 door demo，适合调试。
 
@@ -61,13 +61,19 @@ docker ps -a --filter 'name=tourbot-door-demo-' --format '{{.ID}}' | xargs -r do
 ```bash
 docker compose -f docker_stuff/compose.yaml run --rm --no-deps dev bash -lc '
   colcon build --symlink-install --packages-select \
-    tourbot_bringup tourbot_mission tourbot_perception
+    tourbot_bringup tourbot_behaviors tourbot_mission tourbot_perception
 '
 ```
 
 ## 2. GUI 一键模式
 
-在 `xiao-5080` 桌面环境的终端运行。该模式会打开 Gazebo 3D 界面；如果通过纯 SSH 且没有 X11/VirtualGL，会优先使用第 3 节 headless 模式。
+在 `xiao-5080` 桌面环境的终端运行。该模式会打开 Gazebo 3D 界面；如果通过纯 SSH 且没有 X11/VirtualGL，应优先使用第 3 节 headless 模式。
+
+关键原则：
+
+- 不要再用 `vglrun ros2 launch ... custom_gz_args:="-r -v 2"` 包住整条 launch。
+- Gazebo server 使用 `-s --headless-rendering`，保证物理步进和传感器渲染尽量稳定。
+- 只把独立 GUI client `gz sim -g` 放进 `vglrun`，避免 VirtualGL 环境影响 ROS action server、bridge 和 controller。
 
 ```bash
 cd ~/4sim/gh-ref/tour-guide-robot/Hyaxon-tour-guide-robot
@@ -82,13 +88,35 @@ docker compose -f docker_stuff/compose.yaml run --rm \
     export ROS_DOMAIN_ID=77
     export GZ_PARTITION=tourbot_apriltag_77
     export IGN_PARTITION=$GZ_PARTITION
-    vglrun -d :0 ros2 launch tourbot_bringup door_apriltag_gazebo_world_demo.launch.py \
+    ros2 launch tourbot_bringup door_apriltag_gazebo_world_demo.launch.py \
       ros_domain_id:=77 \
       gz_partition:=tourbot_apriltag_77 \
-      custom_gz_args:="-r -v 2" \
+      custom_gz_args:="-r -s --headless-rendering -v 2" \
+      start_gazebo_gui:=true \
+      gazebo_gui_command:="vglrun -d :0 gz sim -g -v 2" \
       start_image_view:=false
   '
 ```
+
+如果容器内直连 X11 已能拿到 NVIDIA renderer，可以把 GUI 命令改为：
+
+```bash
+gazebo_gui_command:="gz sim -g -v 2"
+```
+
+判定依据是下面任一命令输出的 renderer 明确为 NVIDIA/RTX，而不是 llvmpipe/软件渲染：
+
+```bash
+docker compose -f docker_stuff/compose.yaml run --rm --no-deps dev bash -lc '
+  source install/setup.bash
+  glxinfo -B | grep -E "OpenGL vendor|OpenGL renderer" || true
+  vglrun -d :0 glxinfo -B | grep -E "OpenGL vendor|OpenGL renderer" || true
+'
+```
+
+2026-07-01 在 `xiao-5080` 实测：容器直连 GL 是 `llvmpipe`，`vglrun -d :0` 是 `NVIDIA GeForce RTX 5080/PCIe/SSE2`。因此本机推荐保留 `vglrun -d :0 gz sim -g -v 2` 作为独立 GUI client 命令。
+
+说明：独立 GUI client 仍可能打印少量 `libEGL warning: egl: failed to create dri2 screen`。这与旧命令不同，警告只来自 GUI client，不再影响 headless server、controller 和穿门闭环。不要为了压这条日志强制设置 `QT_XCB_GL_INTEGRATION=xcb_glx`，实测会让 Gazebo `/clock` 异常，导致穿门阶段卡住。
 
 GUI 中应能看到：
 
@@ -200,6 +228,20 @@ Timed out waiting for initial detection of tag 1.
 3. 终端 B 是否出现 `gazebo_demo_initial_robot_pose` 的 set pose 成功日志。
 4. `/oakd/rgb/preview/image_raw` 和 `/oakd/rgb/preview/camera_info` 是否有消息。
 
+如果看到：
+
+```text
+Ignoring the received message ... older than the current time ... exceeds the allowed timeout
+```
+
+说明 `diffdrive_controller` 丢弃了过期速度指令。当前 Gazebo door demo 已对 `/diffdrive_controller/cmd_vel` 使用 zero `TwistStamped` timestamp，让 controller 用自己的当前时刻接收命令；正常情况下最多只会看到一次：
+
+```text
+Received TwistStamped with zero timestamp, setting it to current time
+```
+
+这条一次性日志是可接受的。若仍持续出现 `Ignoring the received message`，优先确认没有使用旧的“整条 launch 外包 `vglrun` + `custom_gz_args:="-r -v 2"`”命令。
+
 ## 6. 运行中检查命令
 
 另开一个终端进入同一个 ROS domain：
@@ -290,5 +332,12 @@ find . -maxdepth 3 \( -name 'core' -o -name 'core.*' \) -printf '%p %s\n'
   - `apriltag_ros` 检测到 tag 1。
   - Gazebo door state 切换到 `open/tag hidden`。
   - `door_traverse` 完成 0.75 m 穿门。
+  - 优化后实测 `elapsed_wall_s=128`，其中穿门阶段约 18 秒；`Ignoring the received message` 计数为 0，`failed to create dri2 screen` 计数为 0。
+- GUI 建议使用 server/headless + 独立 GUI client 方式：
+  - server 命令保持 `custom_gz_args:="-r -s --headless-rendering -v 2"`。
+  - GUI client 由 `start_gazebo_gui:=true` 和 `gazebo_gui_command:="vglrun -d :0 gz sim -g -v 2"` 启动。
+  - 不再推荐整条 `ros2 launch` 外包 `vglrun`，该方式可能让实时因子明显低于 1，并触发 controller 旧时间戳丢弃。
+  - 优化 GUI 入口实测 `elapsed_wall_s=48`，完整日志到 `Door AprilTag demo complete`；`Ignoring the received message` 计数为 0，`zero timestamp` 仅出现一次 controller 提示。
+  - 同一次 GUI 入口中仍有 2 条 `libEGL ... dri2`，来源是独立 GUI client；这次没有拖慢穿门，也没有导致旧速度指令丢弃。
 
 注意：`turtlebot4_node` 偶尔会打印 `Service stop_motor unavailable`、`Service oakd/start_camera unavailable`，这来自 TurtleBot4 HMI/motion_control 层，不影响本 SOP 的 AprilTag 检测、开门和穿门成功判据。

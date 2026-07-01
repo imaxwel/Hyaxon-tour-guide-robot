@@ -36,10 +36,14 @@ class AlignToAprilTagServer(Node):
         self.declare_parameter("detections_topic", "/detections")
         self.declare_parameter("camera_info_topic", "/oakd/rgb/preview/camera_info")
         self.declare_parameter("cmd_vel_topic", "/cmd_vel")
+        self.declare_parameter("use_zero_cmd_stamp", False)
 
         detections_topic = self.get_parameter("detections_topic").value
         camera_info_topic = self.get_parameter("camera_info_topic").value
         cmd_vel_topic = self.get_parameter("cmd_vel_topic").value
+        self.use_zero_cmd_stamp = bool(
+            self.get_parameter("use_zero_cmd_stamp").value
+        )
 
         # Initialize state variables for latest detections and camera info.
         self.latest_detections: Optional[AprilTagDetectionArray] = None
@@ -82,6 +86,10 @@ class AlignToAprilTagServer(Node):
 
         # Debug info
         self.get_logger().info("AlignToAprilTag action server ready.")
+        if self.use_zero_cmd_stamp:
+            self.get_logger().info(
+                "Publishing velocity commands with zero TwistStamped timestamps."
+            )
         #self.get_logger().info(f"Listening for detections on: {detections_topic}")
         #self.get_logger().info(f"Listening for camera info on: {camera_info_topic}")
         #self.get_logger().info(f"Publishing velocity commands on: {cmd_vel_topic}")
@@ -124,7 +132,8 @@ class AlignToAprilTagServer(Node):
     def make_twist_stamped(self) -> TwistStamped:
         msg = TwistStamped()
         msg.header.frame_id = "base_link"
-        msg.header.stamp = self.get_clock().now().to_msg()
+        if not self.use_zero_cmd_stamp:
+            msg.header.stamp = self.get_clock().now().to_msg()
         return msg
 
     # Helper method to stop the robot by publishing a zero velocity command.

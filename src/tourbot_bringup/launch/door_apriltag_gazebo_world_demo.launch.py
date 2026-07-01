@@ -1,10 +1,12 @@
 from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
+    ExecuteProcess,
     IncludeLaunchDescription,
     SetEnvironmentVariable,
     TimerAction,
 )
+from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import (
     EnvironmentVariable,
@@ -26,6 +28,8 @@ def generate_launch_description():
     custom_robot_z = LaunchConfiguration("custom_robot_z")
     custom_robot_yaw = LaunchConfiguration("custom_robot_yaw")
     start_image_view = LaunchConfiguration("start_image_view")
+    start_gazebo_gui = LaunchConfiguration("start_gazebo_gui")
+    gazebo_gui_command = LaunchConfiguration("gazebo_gui_command")
 
     tourbot_bringup = FindPackageShare("tourbot_bringup")
 
@@ -84,6 +88,12 @@ def generate_launch_description():
         ],
     )
 
+    start_gazebo_gui_process = ExecuteProcess(
+        cmd=["bash", "-lc", gazebo_gui_command],
+        output="screen",
+        condition=IfCondition(start_gazebo_gui),
+    )
+
     return LaunchDescription(
         [
             DeclareLaunchArgument(
@@ -136,10 +146,24 @@ def generate_launch_description():
                 default_value="false",
                 description="Open image_view for the Gazebo OAK-D RGB stream.",
             ),
+            DeclareLaunchArgument(
+                "start_gazebo_gui",
+                default_value="false",
+                description=(
+                    "Start a separate Gazebo GUI client. Keep the server headless "
+                    "for stable real-time factor."
+                ),
+            ),
+            DeclareLaunchArgument(
+                "gazebo_gui_command",
+                default_value="vglrun -d :0 gz sim -g -v 2",
+                description="Shell command used when start_gazebo_gui is true.",
+            ),
             SetEnvironmentVariable("ROS_DOMAIN_ID", ros_domain_id),
             SetEnvironmentVariable("GZ_PARTITION", gz_partition),
             SetEnvironmentVariable("IGN_PARTITION", gz_partition),
             start_sim,
+            TimerAction(period=8.0, actions=[start_gazebo_gui_process]),
             TimerAction(period=10.0, actions=[set_initial_robot_pose]),
             TimerAction(period=17.0, actions=[start_demo]),
         ]

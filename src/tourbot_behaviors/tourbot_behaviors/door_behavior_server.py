@@ -37,6 +37,7 @@ class DoorBehaviorServer(Node):
 
         self.declare_parameter("forward_speed_default", 0.18)
         self.declare_parameter("control_rate_hz", 20.0)
+        self.declare_parameter("use_zero_cmd_stamp", False)
 
         cmd_vel_topic = self.get_parameter("cmd_vel_topic").value
         odom_topic = self.get_parameter("odom_topic").value
@@ -57,6 +58,9 @@ class DoorBehaviorServer(Node):
         )
         self.forward_speed_default = float(
             self.get_parameter("forward_speed_default").value
+        )
+        self.use_zero_cmd_stamp = bool(
+            self.get_parameter("use_zero_cmd_stamp").value
         )
 
         self.cmd_pub = self.create_publisher(
@@ -89,6 +93,10 @@ class DoorBehaviorServer(Node):
         self.get_logger().info("Door behavior server ready.")
         self.get_logger().info(f"Publishing velocity commands on: {cmd_vel_topic}")
         self.get_logger().info(f"Listening for odometry on: {odom_topic}")
+        if self.use_zero_cmd_stamp:
+            self.get_logger().info(
+                "Publishing velocity commands with zero TwistStamped timestamps."
+            )
 
     def goal_callback(self, goal_request: DoorTraverse.Goal) -> int:
         self.get_logger().info(
@@ -146,7 +154,8 @@ class DoorBehaviorServer(Node):
     def make_twist_stamped(self) -> TwistStamped:
         msg = TwistStamped()
         msg.header.frame_id = "base_link"
-        msg.header.stamp = self.get_clock().now().to_msg()
+        if not self.use_zero_cmd_stamp:
+            msg.header.stamp = self.get_clock().now().to_msg()
         return msg
 
     def publish_feedback(self, goal_handle, state: str, distance: float) -> None:

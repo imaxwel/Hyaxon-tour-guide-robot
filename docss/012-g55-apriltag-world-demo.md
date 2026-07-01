@@ -248,9 +248,31 @@ docker compose -f docker_stuff/compose.yaml run --rm --no-deps dev bash -lc '
   ros2 launch tourbot_bringup door_apriltag_gazebo_world_demo.launch.py \
     ros_domain_id:=77 \
     gz_partition:=tourbot_apriltag_77 \
-    custom_gz_args:="-r -s --headless-rendering -v 2"
+    custom_gz_args:="-r -s --headless-rendering -v 2" \
+    start_image_view:=false
 '
 ```
+
+如需同时打开 Gazebo 3D 界面，不要把整条 `ros2 launch` 放进 `vglrun`。推荐保持 server headless，并只让独立 GUI client 使用 VirtualGL：
+
+```bash
+cd ~/4sim/gh-ref/tour-guide-robot/Hyaxon-tour-guide-robot
+docker compose -f docker_stuff/compose.yaml run --rm --no-deps dev bash -lc '
+  source install/setup.bash
+  export ROS_DOMAIN_ID=77
+  export GZ_PARTITION=tourbot_apriltag_77
+  export IGN_PARTITION=$GZ_PARTITION
+  ros2 launch tourbot_bringup door_apriltag_gazebo_world_demo.launch.py \
+    ros_domain_id:=77 \
+    gz_partition:=tourbot_apriltag_77 \
+    custom_gz_args:="-r -s --headless-rendering -v 2" \
+    start_gazebo_gui:=true \
+    gazebo_gui_command:="vglrun -d :0 gz sim -g -v 2" \
+    start_image_view:=false
+'
+```
+
+2026-07-01 在 `xiao-5080` 验证：容器直连 `glxinfo -B` 是 `llvmpipe`，`vglrun -d :0 glxinfo -B` 是 `NVIDIA GeForce RTX 5080/PCIe/SSE2`，因此该主机应保留 `vglrun -d :0` 给独立 GUI client。实测不要额外强制 `QT_XCB_GL_INTEGRATION=xcb_glx`，会导致 Gazebo `/clock` 异常。
 
 两终端运行：
 
@@ -292,13 +314,15 @@ docker compose -f docker_stuff/compose.yaml run --rm --no-deps dev bash -lc '
 - `door_state_gazebo_controller` 订阅 `/door_demo/tag_visible`，通过 Gazebo `/world/world_demo/set_pose` 移动门板和 tag：可见时门关闭，隐藏时门打开。
 - `gazebo_entity_pose_setter` 在 spawn 后把 `turtlebot4` 设置到 tag 1 观察位。TurtleBot4 spawn launch 的 x/y/yaw 参数在当前栈里不稳定，demo 不再依赖它们直接生效。
 - Gazebo demo 的速度命令走 `/diffdrive_controller/cmd_vel`，里程计使用真实 `/odom`，不再使用 `/door_demo/odom` 积分替身。
+- Gazebo demo 对 `/diffdrive_controller/cmd_vel` 使用 zero `TwistStamped` timestamp，由 controller 用当前控制时刻接收命令，避免仿真实时因子偏低时旧时间戳命令被丢弃。
+- GUI 观察模式采用 server headless + 独立 `gz sim -g` client；不再推荐整条 launch 外包 `vglrun`。
 - Gazebo demo 的门状态控制、mission 控制流和 door behavior 使用 wall time；mission 节点在状态切换点主动重复发布 `/door_demo/tag_visible`，避免 `/clock` 暂时缺失时 ROS timer 不触发。
 
 ## 5.验证结果
 
 已在远端 `xiao-5080` 的 Docker 环境验证：
 
-- `colcon build --symlink-install --packages-select tourbot_bringup tourbot_mission` 通过。
+- `colcon build --symlink-install --packages-select tourbot_bringup tourbot_behaviors tourbot_mission tourbot_perception` 通过。
 - `sim.launch.py use_custom_sim:=true start_navigation:=false custom_gz_args:="-r -s -v 2"` 默认加载 `world_no_sensors.sdf`，能启动 `world_demo`，并创建合法 `/world/world_demo/...` bridge。
 - `joint_state_broadcaster` 与 `diffdrive_controller` 能正常 load / configure / activate；原先由 Gazebo 先崩溃导致的 controller spawner 超时不再出现。
 - `/odom` 在 2 秒内出现。
@@ -311,6 +335,11 @@ docker compose -f docker_stuff/compose.yaml run --rm --no-deps dev bash -lc '
   - `wait_for_tag_removed` 在 tag 移出视野后成功。
   - `door_behavior_server` 通过 `/diffdrive_controller/cmd_vel` + `/odom` 完成 `0.75 m` 穿门动作。
   - 最终日志：`Door AprilTag demo complete: closed tag detected, tag removed, and door traversal finished.`
+- 优化后的 3D GUI 入口已验证：
+  - `start_gazebo_gui:=true` + 独立 `vglrun -d :0 gz sim -g -v 2` 完整通过，`elapsed_wall_s=48`。
+  - `Ignoring the received message` 计数为 0。
+  - `diffdrive_controller` 只出现一次 zero timestamp 提示，这是预期行为。
+  - 少量 `libEGL ... dri2` 只来自独立 GUI client，不再影响穿门闭环。
 
 ## 6.分层说明
 

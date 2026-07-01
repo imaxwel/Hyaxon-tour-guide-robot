@@ -66,6 +66,7 @@ def generate_launch_description():
             {
                 "use_sim_time": False,
                 "cmd_vel_topic": "/diffdrive_controller/cmd_vel",
+                "use_zero_cmd_stamp": True,
             }
         ],
     )
@@ -88,6 +89,7 @@ def generate_launch_description():
                 "use_sim_time": False,
                 "odom_topic": "/odom",
                 "cmd_vel_topic": "/diffdrive_controller/cmd_vel",
+                "use_zero_cmd_stamp": True,
             }
         ],
     )
