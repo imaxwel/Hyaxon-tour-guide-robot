@@ -27,6 +27,10 @@ def generate_launch_description():
     custom_world = LaunchConfiguration('custom_world')
     custom_world_name = LaunchConfiguration('custom_world_name')
     custom_gz_args = LaunchConfiguration('custom_gz_args')
+    custom_robot_x = LaunchConfiguration('custom_robot_x')
+    custom_robot_y = LaunchConfiguration('custom_robot_y')
+    custom_robot_z = LaunchConfiguration('custom_robot_z')
+    custom_robot_yaw = LaunchConfiguration('custom_robot_yaw')
     custom_map = LaunchConfiguration('custom_map')
     start_navigation = LaunchConfiguration('start_navigation')
     cardboard_city_model_path = PathJoinSubstitution([
@@ -92,6 +96,10 @@ def generate_launch_description():
             'slam': 'false',
             'localization': 'false',
             'rviz': 'false',
+            'x': custom_robot_x,
+            'y': custom_robot_y,
+            'z': custom_robot_z,
+            'yaw': custom_robot_yaw,
         }.items(),
     )
 
@@ -224,6 +232,30 @@ def generate_launch_description():
             'custom_gz_args',
             default_value='-r -v 4',
             description='Extra gz sim arguments for the custom world.',
+        ),
+
+        DeclareLaunchArgument(
+            'custom_robot_x',
+            default_value='0.0',
+            description='Initial robot x pose for the custom Gazebo world.',
+        ),
+
+        DeclareLaunchArgument(
+            'custom_robot_y',
+            default_value='0.0',
+            description='Initial robot y pose for the custom Gazebo world.',
+        ),
+
+        DeclareLaunchArgument(
+            'custom_robot_z',
+            default_value='0.0',
+            description='Initial robot z pose for the custom Gazebo world.',
+        ),
+
+        DeclareLaunchArgument(
+            'custom_robot_yaw',
+            default_value='0.0',
+            description='Initial robot yaw pose for the custom Gazebo world.',
         ),
 
         DeclareLaunchArgument(

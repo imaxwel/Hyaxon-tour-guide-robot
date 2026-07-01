@@ -1,0 +1,12 @@
+apriltag:
+  ros__parameters:
+    family: 36h11
+    size: 0.162
+    qos_profile: sensor_data
+    max_hamming: 2
+    z_up: true
+    detector:
+      decimate: 1.0
+      blur: 0.0
+      refine: true
+      sharpening: 0.25

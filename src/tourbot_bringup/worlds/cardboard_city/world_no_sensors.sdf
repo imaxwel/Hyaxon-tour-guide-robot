@@ -219,33 +219,45 @@
             </link>
         </model>
 
+        <model name="door_outward_panel">
+            <static>true</static>
+            <pose>3.14 -0.53 0.42 0 0 0</pose>
+            <link name="link">
+                <visual name="panel_visual">
+                    <geometry>
+                        <box>
+                            <size>0.72 0.035 0.84</size>
+                        </box>
+                    </geometry>
+                    <material>
+                        <ambient>0.72 0.54 0.31 1</ambient>
+                        <diffuse>0.72 0.54 0.31 1</diffuse>
+                    </material>
+                </visual>
+            </link>
+        </model>
+
+        <model name="door_inward_panel">
+            <static>true</static>
+            <pose>1.71 0.53 0.42 0 0 0</pose>
+            <link name="link">
+                <visual name="panel_visual">
+                    <geometry>
+                        <box>
+                            <size>0.72 0.035 0.84</size>
+                        </box>
+                    </geometry>
+                    <material>
+                        <ambient>0.72 0.54 0.31 1</ambient>
+                        <diffuse>0.72 0.54 0.31 1</diffuse>
+                    </material>
+                </visual>
+            </link>
+        </model>
+
         <model name="cardboard_city_door_and_box_panels">
             <static>true</static>
             <link name="link">
-                <visual name="door_outward_closed_marker_panel">
-                    <pose>3.14 -0.53 0.42 0 0 0</pose>
-                    <geometry>
-                        <box>
-                            <size>0.72 0.035 0.84</size>
-                        </box>
-                    </geometry>
-                    <material>
-                        <ambient>0.72 0.54 0.31 1</ambient>
-                        <diffuse>0.72 0.54 0.31 1</diffuse>
-                    </material>
-                </visual>
-                <visual name="door_inward_closed_marker_panel">
-                    <pose>1.71 0.53 0.42 0 0 0</pose>
-                    <geometry>
-                        <box>
-                            <size>0.72 0.035 0.84</size>
-                        </box>
-                    </geometry>
-                    <material>
-                        <ambient>0.72 0.54 0.31 1</ambient>
-                        <diffuse>0.72 0.54 0.31 1</diffuse>
-                    </material>
-                </visual>
                 <visual name="box_goal_3">
                     <pose>0.45 0.495 0.25 0 0 0</pose>
                     <geometry>

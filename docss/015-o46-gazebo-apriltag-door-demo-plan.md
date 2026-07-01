@@ -182,7 +182,7 @@ dry-run 显示会级联删除 21 个包（包括 gz-sim-vendor、turtlebot4-simu
 
 ## 8. 修复后解锁的能力
 
-修复后，014 文档规划的 **Level 3 完整 Gazebo 3D 视觉闭环**不再被阻塞：
+修复后，014 文档规划的 **Level 3 完整 Gazebo 3D 视觉闭环**不再被阻塞，且已在 012 文档继续实现：
 
 ```text
 Gazebo world + TurtleBot4 OAK-D rgbd_camera
@@ -194,15 +194,28 @@ Gazebo world + TurtleBot4 OAK-D rgbd_camera
   → 行为层
 ```
 
-现在要做的是 bridge 那些 Gazebo topic 到标准 ROS topic 名称（`/oakd/rgb/preview/image_raw` 等），这是纯 launch/bridge 配置工作，不再有底层渲染崩溃阻塞。
+当前实现入口：
+
+```text
+src/tourbot_bringup/launch/door_apriltag_gazebo_world_demo.launch.py
+src/tourbot_bringup/launch/door_apriltag_gazebo_demo.launch.py
+```
+
+关键补齐：
+
+- Gazebo OAK-D image/camera_info 已 bridge 到 `/oakd/rgb/preview/image_raw` 与 `/oakd/rgb/preview/camera_info`。
+- `apriltag_ros` 已使用 Gazebo 专用参数从真实渲染图像检测 `tag_id=1`。
+- `door_state_gazebo_controller` 已通过 `/world/world_demo/set_pose` 控制 tag/门板开闭状态。
+- `door_behavior_server` 已通过 `/diffdrive_controller/cmd_vel` + `/odom` 完成真实仿真穿门。
 
 ## 9. 下一步
 
 1. ✅ Dockerfile 修复已实施，下次 `docker compose build` 自动生效
-2. 验证 bridge 配置：把 Gazebo camera topic 桥接到 `/oakd/rgb/preview/image_raw`
-3. 验证 `apriltag_ros` 能从 Gazebo 渲染的图像中检测到 AprilTag
-4. 接入行为层，完成 Level 3 全闭环
-5. 回归测试：确认 world_no_sensors.sdf 的行为 demo 仍然正常
+2. ✅ bridge 配置已验证：Gazebo camera topic 可桥接到 `/oakd/rgb/preview/image_raw`
+3. ✅ `apriltag_ros` 已能从 Gazebo 渲染图像中检测到 AprilTag
+4. ✅ 行为层已接入，Level 3 全闭环已完成
+5. ✅ `world_no_sensors.sdf` 的门 demo 已回归通过
+6. 后续优化：把 tag/门板的 Gazebo 状态规格从 Python 常量迁移到 YAML 配置，便于扩展更多门
 
 ## 10. 参考
 

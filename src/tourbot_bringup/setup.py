@@ -86,6 +86,10 @@ setup(
             'nav2_post_localization_activator = '
             'tourbot_bringup.nav2_post_localization_activator:main',
             'odom_tf_compat = tourbot_bringup.odom_tf_compat:main',
+            'gazebo_entity_pose_setter = '
+            'tourbot_bringup.gazebo_entity_pose_setter:main',
+            'door_state_gazebo_controller = '
+            'tourbot_bringup.door_state_gazebo_controller:main',
         ],
     },
 )

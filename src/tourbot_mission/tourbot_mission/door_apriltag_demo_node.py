@@ -47,6 +47,7 @@ class DoorAprilTagDemoNode(Node):
         self.declare_parameter("door_forward_distance", 0.60)
         self.declare_parameter("door_forward_speed", 0.18)
         self.declare_parameter("start_delay_sec", 3.0)
+        self.declare_parameter("wait_for_initial_detection_sec", 0.0)
         self.declare_parameter("publish_demo_odom", False)
         self.declare_parameter("publish_synthetic_detections", True)
         self.declare_parameter("publish_camera_info", True)
@@ -73,6 +74,9 @@ class DoorAprilTagDemoNode(Node):
         )
         self.door_forward_speed = float(self.get_parameter("door_forward_speed").value)
         self.start_delay_sec = float(self.get_parameter("start_delay_sec").value)
+        self.wait_for_initial_detection_sec = float(
+            self.get_parameter("wait_for_initial_detection_sec").value
+        )
         self.publish_demo_odom = bool(self.get_parameter("publish_demo_odom").value)
         self.publish_synthetic_detections = bool(
             self.get_parameter("publish_synthetic_detections").value
@@ -93,6 +97,7 @@ class DoorAprilTagDemoNode(Node):
         self.demo_odom_y = 0.0
         self.latest_cmd_linear_x = 0.0
         self.last_odom_update_time = time.monotonic()
+        self.latest_detections = None
 
         self.detections_pub = self.create_publisher(
             AprilTagDetectionArray,
@@ -118,6 +123,12 @@ class DoorAprilTagDemoNode(Node):
             TwistStamped,
             cmd_vel_topic,
             self.cmd_vel_callback,
+            10,
+        )
+        self.detections_sub = self.create_subscription(
+            AprilTagDetectionArray,
+            detections_topic,
+            self.detections_callback,
             10,
         )
 
@@ -157,6 +168,18 @@ class DoorAprilTagDemoNode(Node):
 
     def cmd_vel_callback(self, msg: TwistStamped) -> None:
         self.latest_cmd_linear_x = float(msg.twist.linear.x)
+
+    def detections_callback(self, msg: AprilTagDetectionArray) -> None:
+        self.latest_detections = msg
+
+    def target_tag_visible(self) -> bool:
+        if self.latest_detections is None:
+            return False
+
+        return any(
+            int(detection.id) == self.tag_id
+            for detection in self.latest_detections.detections
+        )
 
     def publish_integrated_demo_odom(self) -> None:
         now = time.monotonic()
@@ -235,10 +258,25 @@ class DoorAprilTagDemoNode(Node):
         ]
         return detection
 
-    def publish_camera_state(self) -> None:
+    def publish_tag_visible_state(self) -> None:
         visible_msg = Bool()
         visible_msg.data = bool(self.tag_visible)
         self.tag_visible_pub.publish(visible_msg)
+
+    def publish_tag_visible_repeated(
+        self,
+        visible: bool,
+        count: int = 8,
+        period_sec: float = 0.05,
+    ) -> None:
+        self.tag_visible = bool(visible)
+
+        for _ in range(max(1, count)):
+            self.publish_tag_visible_state()
+            time.sleep(period_sec)
+
+    def publish_camera_state(self) -> None:
+        self.publish_tag_visible_state()
 
         if self.publish_camera_info_enabled:
             self.camera_info_pub.publish(self.make_camera_info())
@@ -303,6 +341,30 @@ class DoorAprilTagDemoNode(Node):
         self.get_logger().info(f"{name} succeeded: {response.result.message}")
         return True
 
+    def wait_for_initial_detection(self) -> bool:
+        if self.wait_for_initial_detection_sec <= 0.0:
+            return True
+
+        deadline = time.monotonic() + self.wait_for_initial_detection_sec
+        self.get_logger().info(
+            f"Waiting up to {self.wait_for_initial_detection_sec:.1f}s "
+            f"for initial detection of tag {self.tag_id}."
+        )
+
+        while rclpy.ok() and time.monotonic() < deadline:
+            if self.target_tag_visible():
+                self.get_logger().info(
+                    f"Initial AprilTag {self.tag_id} detection is available."
+                )
+                return True
+
+            time.sleep(0.05)
+
+        self.get_logger().error(
+            f"Timed out waiting for initial detection of tag {self.tag_id}."
+        )
+        return False
+
     def run_wait_for_tag_removed(self) -> bool:
         goal = WaitForTagRemoved.Goal()
         goal.tag_id = self.tag_id
@@ -313,6 +375,7 @@ class DoorAprilTagDemoNode(Node):
             "Door is CLOSED: publishing visible AprilTag "
             f"{self.tag_id} for {self.visible_before_open_sec:.1f}s."
         )
+        self.publish_tag_visible_repeated(True)
 
         send_goal_future = self.wait_client.send_goal_async(goal)
 
@@ -331,7 +394,7 @@ class DoorAprilTagDemoNode(Node):
 
         while rclpy.ok() and not result_future.done():
             if not opened and time.monotonic() >= open_at:
-                self.tag_visible = False
+                self.publish_tag_visible_repeated(False)
                 opened = True
                 self.get_logger().info(
                     "Door is OPEN: AprilTag is no longer visible."
@@ -368,6 +431,10 @@ class DoorAprilTagDemoNode(Node):
             return
 
         self.tag_visible = True
+        self.publish_tag_visible_repeated(True)
+
+        if not self.wait_for_initial_detection():
+            return
 
         align_goal = AlignToAprilTag.Goal()
         align_goal.tag_id = self.tag_id

@@ -210,6 +210,85 @@ door_traverse succeeded: Door traversal complete for tag_id=1, door_type=OUTWARD
 Door AprilTag demo complete: closed tag detected, tag removed, and door traversal finished.
 ```
 
+### 4.2 真实 Gazebo OAK-D 3D 闭环 demo
+
+在 015 文档修复 Gazebo OGRE1/OGRE2 渲染插件冲突后，已补齐完整 Gazebo 3D 闭环入口：
+
+```text
+Gazebo world + TurtleBot4 OAK-D rgbd_camera
+  -> ros_gz_bridge
+  -> /oakd/rgb/preview/image_raw + /oakd/rgb/preview/camera_info
+  -> apriltag_ros
+  -> /detections
+  -> align_to_apriltag
+  -> wait_for_tag_removed
+  -> Gazebo set_pose 开门/隐藏 tag
+  -> door_traverse 通过 /odom + diffdrive_controller 穿门
+```
+
+新增文件：
+
+```text
+src/tourbot_bringup/launch/door_apriltag_gazebo_world_demo.launch.py
+src/tourbot_bringup/launch/door_apriltag_gazebo_demo.launch.py
+src/tourbot_bringup/tourbot_bringup/door_state_gazebo_controller.py
+src/tourbot_bringup/tourbot_bringup/gazebo_entity_pose_setter.py
+src/tourbot_perception/config/apriltags_36h11_gazebo.yaml
+```
+
+一键运行：
+
+```bash
+cd ~/4sim/gh-ref/tour-guide-robot/Hyaxon-tour-guide-robot
+docker compose -f docker_stuff/compose.yaml run --rm --no-deps dev bash -lc '
+  source install/setup.bash
+  ros2 launch tourbot_bringup door_apriltag_gazebo_world_demo.launch.py \
+    ros_domain_id:=77 \
+    gz_partition:=tourbot_apriltag_77 \
+    custom_gz_args:="-r -s --headless-rendering -v 2"
+'
+```
+
+两终端运行：
+
+终端 A：启动 custom world + TurtleBot4。
+
+```bash
+cd ~/4sim/gh-ref/tour-guide-robot/Hyaxon-tour-guide-robot
+docker compose -f docker_stuff/compose.yaml run --rm --no-deps dev bash -lc '
+  source install/setup.bash
+  export ROS_DOMAIN_ID=77
+  export GZ_PARTITION=tourbot_apriltag_77
+  export IGN_PARTITION=$GZ_PARTITION
+  ros2 launch tourbot_bringup sim.launch.py \
+    use_custom_sim:=true \
+    start_navigation:=false \
+    custom_gz_args:="-r -s --headless-rendering -v 2"
+'
+```
+
+终端 B：启动真实 Gazebo OAK-D AprilTag/门行为闭环。
+
+```bash
+cd ~/4sim/gh-ref/tour-guide-robot/Hyaxon-tour-guide-robot
+docker compose -f docker_stuff/compose.yaml run --rm --no-deps dev bash -lc '
+  source install/setup.bash
+  export ROS_DOMAIN_ID=77
+  export GZ_PARTITION=tourbot_apriltag_77
+  export IGN_PARTITION=$GZ_PARTITION
+  ros2 launch tourbot_bringup door_apriltag_gazebo_demo.launch.py tag_id:=1
+'
+```
+
+关键实现点：
+
+- `world_no_sensors.sdf` 继续作为默认 world，避免 world 级 sensors-system 与 TurtleBot4 robot model 自带 sensors-system 重复。
+- `apriltags_36h11_gazebo.yaml` 使用 `qos_profile: sensor_data`、`max_hamming: 2`、`detector.decimate: 1.0`，适配 Gazebo 渲染出来的 tag 图像质量。
+- `door_state_gazebo_controller` 订阅 `/door_demo/tag_visible`，通过 Gazebo `/world/world_demo/set_pose` 移动门板和 tag：可见时门关闭，隐藏时门打开。
+- `gazebo_entity_pose_setter` 在 spawn 后把 `turtlebot4` 设置到 tag 1 观察位。TurtleBot4 spawn launch 的 x/y/yaw 参数在当前栈里不稳定，demo 不再依赖它们直接生效。
+- Gazebo demo 的速度命令走 `/diffdrive_controller/cmd_vel`，里程计使用真实 `/odom`，不再使用 `/door_demo/odom` 积分替身。
+- Gazebo demo 的门状态控制、mission 控制流和 door behavior 使用 wall time；mission 节点在状态切换点主动重复发布 `/door_demo/tag_visible`，避免 `/clock` 暂时缺失时 ROS timer 不触发。
+
 ## 5.验证结果
 
 已在远端 `xiao-5080` 的 Docker 环境验证：
@@ -220,30 +299,24 @@ Door AprilTag demo complete: closed tag detected, tag removed, and door traversa
 - `/odom` 在 2 秒内出现。
 - `door_apriltag_demo.launch.py tag_id:=1` 在约 15 秒内打印完整成功日志；launch 内的 action servers 会继续驻留，测试脚本用 `timeout` / Ctrl-C 结束时会出现正常清理日志。
 - `door_apriltag_visual_demo.launch.py tag_id:=1 start_image_view:=false` 已验证可由 `apriltag_ros` 从 `/oakd/rgb/preview/image_raw` 检测出 tag，并完成同一套门行为链路。
+- `door_apriltag_gazebo_world_demo.launch.py` 已验证完整真实 Gazebo OAK-D 3D 闭环：
+  - `gazebo_entity_pose_setter` 成功把 `turtlebot4` 设置到 tag 1 观察位。
+  - `apriltag_ros` 从 Gazebo `/oakd/rgb/preview/image_raw` 检测到 `tag_id=1`。
+  - `door_state_gazebo_controller` 收到 closed/open 状态并移动 Gazebo tag/门板。
+  - `wait_for_tag_removed` 在 tag 移出视野后成功。
+  - `door_behavior_server` 通过 `/diffdrive_controller/cmd_vel` + `/odom` 完成 `0.75 m` 穿门动作。
+  - 最终日志：`Door AprilTag demo complete: closed tag detected, tag removed, and door traversal finished.`
 
-## 6.边界说明
+## 6.分层说明
 
-当前稳定 demo 使用可控 `/detections` 消息来表达“门关闭/打开”，不是依赖 Gazebo 相机实际识别 tag 纹理。这是为了稳定验证门行为链路：
+当前保留三层入口，便于不同风险级别的回归：
 
-```text
-detections -> align_to_apriltag -> wait_for_tag_removed -> door_traverse
-```
+- `door_apriltag_demo.launch.py`：最稳定的行为链路回归，使用可控 `/detections` 和 `/door_demo/odom`。
+- `door_apriltag_visual_demo.launch.py`：独立 ROS camera publisher 生成图像，由 `apriltag_ros` 做真实图像检测，不依赖 Gazebo render sensors。
+- `door_apriltag_gazebo_world_demo.launch.py` / `door_apriltag_gazebo_demo.launch.py`：真实 Gazebo OAK-D 3D 闭环，使用 Gazebo 相机图像、真实 `/odom` 和 `diffdrive_controller`。
 
-world 中已经有真实 8 个 AprilTag 可视模型。若要进一步做完整视觉闭环，需要单独调试：
+注意：
 
-- OAK-D Gazebo 相机视角是否正对 tag。
-- tag 纹理在 `gz sim` / OGRE2 中是否清晰、未镜像。
-- `apriltag_ros` 是否能从 `/oakd/rgb/preview/image_raw` 发布真实 `/detections`。
-- 门 opening 事件如何驱动 Gazebo 中真实 tag/门板消失或移动。
-
-若要恢复完整 Gazebo 相机 / 雷达传感器 world，可显式传入原 world：
-
-```bash
-custom_world:=/ws/install/tourbot_bringup/share/tourbot_bringup/worlds/cardboard_city/world
-```
-
-但在 `xiao-5080` 当前 Ubuntu 24.04 / ROS 2 Jazzy / Gazebo Harmonic / RTX 5080 Docker 环境中，该 full-sensors world 可能触发 FAQ 013 记录的 OGRE2/EGL server-side rendering 崩溃。
-
-视觉闭环入口 `door_apriltag_visual_demo.launch.py` 不依赖 Gazebo render sensors。它使用独立 ROS camera publisher 生成可视化相机图像，再由 `apriltag_ros` 做真实图像检测。这不是 Gazebo OAK-D 的物理渲染相机，但已经覆盖“图像输入 -> AprilTag 检测 -> 行为决策”的 perception-in-the-loop 链路。
-
-也就是说，本次已经补齐 world 资产和门行为演示闭环；真实视觉识别闭环是下一层集成验证。
+- 默认仍使用 `world_no_sensors.sdf`。这不是“无相机”，而是去掉 world 级 sensors-system，让 TurtleBot4 robot model 自带的 OAK-D sensors-system 唯一生效。
+- `world.sdf` 也同步了独立门板模型，方便 `set_pose` 控制，但 full world 仍不推荐作为默认入口。
+- 如果 apt upgrade 或重建基础镜像后 OGRE1 插件文件恢复，需要按 015 文档重新构建 Dockerfile 修复层。
