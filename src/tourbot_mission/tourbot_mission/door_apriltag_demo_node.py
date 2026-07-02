@@ -405,7 +405,8 @@ class DoorAprilTagDemoNode(Node):
                 self.publish_tag_visible_repeated(False)
                 opened = True
                 self.get_logger().info(
-                    "Door is OPEN: AprilTag is no longer visible."
+                    "Door opening requested: Gazebo will slide the AprilTag "
+                    "out of the OAK-D field of view."
                 )
 
             time.sleep(0.05)

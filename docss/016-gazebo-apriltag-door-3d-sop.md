@@ -2,7 +2,7 @@
 
 > 日期：2026-07-01  
 > 主机：`xiao-5080`  
-> 目标：用 Gazebo 3D world + TurtleBot4 OAK-D 相机完整验证“识别门上 AprilTag -> 开门隐藏 tag -> 等待 tag 消失 -> 穿门”的闭环。
+> 目标：用 Gazebo 3D world + TurtleBot4 OAK-D 相机完整验证“识别门上 AprilTag -> 侧滑开门使 tag 离开视野 -> 等待 tag 消失 -> 穿门”的闭环。
 
 ## 0. 结论
 
@@ -16,7 +16,7 @@ Gazebo 3D world
   -> /detections
   -> align_to_apriltag
   -> /door_demo/tag_visible
-  -> Gazebo set_pose 移动门板和 tag
+  -> Gazebo set_pose 按时间插值侧滑门板和 tag
   -> wait_for_tag_removed
   -> door_traverse
   -> /diffdrive_controller/cmd_vel + /odom
@@ -125,7 +125,7 @@ GUI 中应能看到：
 1. `cardboard_city` 3D world。
 2. TurtleBot4 被设置到 tag 1 门前。
 3. 外开门 tag 1 初始可见，贴在外开门门板朝向机器人一侧的表面。
-4. demo 触发开门后，门板和 tag 被移动，tag 从 OAK-D 视野消失。
+4. demo 触发开门后，门板和 tag 像电梯货梯侧滑门一样朝一侧平移，tag 逐步从 OAK-D 视野消失。
 5. TurtleBot4 向前穿过门位。
 
 ## 3. Headless 一键模式
@@ -211,7 +211,7 @@ gazebo_demo_initial_robot_pose]: Set Gazebo pose for turtlebot4.
 ```text
 Initial AprilTag 1 detection is available.
 align_to_apriltag succeeded: Aligned to tag 1.
-Applying Gazebo door state: open/tag hidden.
+Applying Gazebo door state: opening/sliding tag out of FOV.
 wait_for_tag_removed succeeded: Tag 1 removed from FOV
 door_traverse succeeded: Door traversal complete for tag_id=1, door_type=OUTWARD
 Door AprilTag demo complete: closed tag detected, tag removed, and door traversal finished.
@@ -352,6 +352,10 @@ find . -maxdepth 3 \( -name 'core' -o -name 'core.*' \) -printf '%p %s\n'
 
 2026-07-02 边界修复后，`cardboard_city` 静态墙和纸箱障碍已补 collision。3D door demo 的默认 `door_forward_distance` 随之从 `0.75` 调整为 `0.60`，目标是清过门槛后停止，而不是把机器人推进到外围边界附近。`sim.launch.py` 已把 `custom_robot_x/y/z/yaw` 透传给 TurtleBot4 spawn，一键入口默认不再在 controller 启动后额外 teleport 机器人，并使用 `custom_spawn_with_create3_nodes:=false` 走项目内 `turtlebot4_door_demo_spawn.launch.py`，避免完整 TurtleBot4 spawn 自动生成的 `standard_dock` 和 Create3 `motion_control` 与门行为同时写 `/diffdrive_controller/cmd_vel`。`door_behavior_server` 也增加了可选 workspace/走廊 guard、最长运动时间、无进展 watchdog 和重复 stop 命令；这个一键 Gazebo demo 不把 diffdrive `/odom` 当作 Gazebo world 坐标，而是用 `/sim_ground_truth_pose` 驱动行为层的 workspace/走廊/进展判断。边界原因和验证方式见 `013-g55-apriltag-world-demo-faq.md` 的 Q12。
 
-2026-07-02 tag 位置复核：`tag_id=1` 对应的 Gazebo 实体是 `apriltag_door_outward_1`。旧配置把它放在 `(3.14, -0.45, 0.45)`，与外开门门板中心 `(3.14, -0.53, 0.42)` 相差约 8 cm，所以从 GUI 顶视角看起来像门前/围栏边上独立漂着的 tag。现已把 tag 1 关闭态改为 `(3.14, -0.5115, 0.45)`，贴到外开门北侧门面；tag 2 也同步贴到内开门南侧门面 `(1.71, 0.5115, 0.45)`。`door_state_gazebo_controller.py` 的 closed pose 已同步，否则 demo 收到 `/door_demo/tag_visible=true` 时会把门 tag 再移回旧坐标。开门时仍按本 SOP 的 demo 逻辑把 tag 移到视野外，用来稳定触发 “tag removed from FOV”。
+2026-07-02 tag 位置复核：`tag_id=1` 对应的 Gazebo 实体是 `apriltag_door_outward_1`。旧配置把它放在 `(3.14, -0.45, 0.45)`，与外开门门板中心 `(3.14, -0.53, 0.42)` 相差约 8 cm，所以从 GUI 顶视角看起来像门前/围栏边上独立漂着的 tag。现已把 tag 1 关闭态改为 `(3.14, -0.5115, 0.45)`，贴到外开门北侧门面；tag 2 也同步贴到内开门南侧门面 `(1.71, 0.5115, 0.45)`。`door_state_gazebo_controller.py` 的 closed pose 已同步，否则 demo 收到 `/door_demo/tag_visible=true` 时会把门 tag 再移回旧坐标。
 
 2026-07-02 tag 贴门后回归：使用独立 `ROS_DOMAIN_ID=188` / `GZ_PARTITION=tourbot_apriltag_tagfix_188` 跑 headless 一键模式，日志依次出现 `Initial AprilTag 1 detection is available`、`align_to_apriltag succeeded`、`Applying Gazebo door state: open/tag hidden`、`wait_for_tag_removed succeeded`、`door_traverse succeeded` 和 `Door AprilTag demo complete`。本次验证命令外层使用 110 秒 timeout；成功日志出现后 launch 继续常驻，最终 timeout 返回 `124`，不代表 demo 失败。
+
+2026-07-02 侧滑货梯门更新：`door_state_gazebo_controller.py` 不再把开门态的 tag 瞬移到远处；收到 `/door_demo/tag_visible=false` 后，门板和 tag 通过 timer-driven smoothstep 插值侧滑。默认 `door_motion_duration_sec=3.0`、`door_motion_update_period_sec=0.15`，tag 1 从 `(3.14, -0.5115, 0.45)` 随外开门滑到 `(3.96, -0.5115, 0.45)`，tag 2 从 `(1.71, 0.5115, 0.45)` 随内开门滑到 `(0.89, 0.5115, 0.45)`。`missing_duration_sec` 默认从 `1.0` 调整为 `1.5`，避免 tag 刚离开视野就立即穿门。
+
+2026-07-02 侧滑货梯门回归：使用独立 `ROS_DOMAIN_ID=189` / `GZ_PARTITION=tourbot_apriltag_slide_189` 跑 headless 一键模式，日志依次出现 `Initial AprilTag 1 detection is available`、`align_to_apriltag succeeded`、`Applying Gazebo door state: opening/sliding tag out of FOV`、`Door opening requested: Gazebo will slide the AprilTag out of the OAK-D field of view`、`wait_for_tag_removed succeeded: Tag 1 removed from FOV for 1.52 seconds`、`Gazebo sliding door open: panel and tag reached side pocket pose`、`door_traverse succeeded` 和 `Door AprilTag demo complete`。本次验证命令外层使用 130 秒 timeout；成功日志出现后 launch 继续常驻，最终 timeout 返回 `124`，不代表 demo 失败。

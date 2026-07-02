@@ -14,6 +14,8 @@ def generate_launch_description():
     start_image_view = LaunchConfiguration("start_image_view")
     visible_before_open_sec = LaunchConfiguration("visible_before_open_sec")
     missing_duration_sec = LaunchConfiguration("missing_duration_sec")
+    door_motion_duration_sec = LaunchConfiguration("door_motion_duration_sec")
+    door_motion_update_period_sec = LaunchConfiguration("door_motion_update_period_sec")
     door_forward_distance = LaunchConfiguration("door_forward_distance")
     door_forward_speed = LaunchConfiguration("door_forward_speed")
     set_initial_robot_pose = LaunchConfiguration("set_initial_robot_pose")
@@ -53,6 +55,8 @@ def generate_launch_description():
                 "use_sim_time": False,
                 "tag_id": tag_id,
                 "world_name": world_name,
+                "door_motion_duration_sec": door_motion_duration_sec,
+                "door_motion_update_period_sec": door_motion_update_period_sec,
             }
         ],
     )
@@ -201,8 +205,18 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "missing_duration_sec",
-                default_value="1.0",
+                default_value="1.5",
                 description="Required continuous no-tag duration before traversal.",
+            ),
+            DeclareLaunchArgument(
+                "door_motion_duration_sec",
+                default_value="3.0",
+                description="Side-sliding Gazebo door motion duration.",
+            ),
+            DeclareLaunchArgument(
+                "door_motion_update_period_sec",
+                default_value="0.15",
+                description="Gazebo door pose update period during sliding motion.",
             ),
             DeclareLaunchArgument(
                 "door_forward_distance",
