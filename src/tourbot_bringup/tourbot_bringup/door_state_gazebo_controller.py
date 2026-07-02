@@ -35,7 +35,7 @@ DOOR_SPECS: Dict[int, DoorSpec] = {
         panel_entity="door_outward_panel",
         tag_closed=PoseSpec(
             3.14,
-            -0.45,
+            -0.5115,
             0.45,
             0.5000018366025517,
             -0.49999999999662686,
@@ -59,7 +59,7 @@ DOOR_SPECS: Dict[int, DoorSpec] = {
         panel_entity="door_inward_panel",
         tag_closed=PoseSpec(
             1.71,
-            0.45,
+            0.5115,
             0.45,
             0.5000018366025517,
             0.49999999999662686,

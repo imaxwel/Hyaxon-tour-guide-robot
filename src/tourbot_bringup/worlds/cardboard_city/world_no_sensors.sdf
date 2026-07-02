@@ -154,10 +154,11 @@
             Cardboard city fixtures.
 
             Landmark poses are treated as robot observation poses from
-            tourbot_landmarks/config/cardboard_city/landmarks.yaml. Each tag is
-            mounted about 45 cm in front of that observation pose, with the tag
-            face normal pointing back toward the robot. The tag model side
-            length is 0.162 m, matching tourbot_perception/config/apriltags_36h11.yaml.
+            tourbot_landmarks/config/cardboard_city/landmarks.yaml. Door tags are
+            mounted on the visible door face. Box tags are mounted just proud of
+            their box face, with the tag face normal pointing back toward the
+            robot. The tag model side length is 0.162 m, matching
+            tourbot_perception/config/apriltags_36h11.yaml.
 
             Boundary walls and cardboard box markers include matching collision
             shapes so Gazebo physics and the visible scene agree. Door panels
@@ -449,13 +450,13 @@
         <include>
             <name>apriltag_door_outward_1</name>
             <uri>model://tag36_11_00001</uri>
-            <pose>3.14 -0.45 0.45 0 1.5708 1.5708</pose>
+            <pose>3.14 -0.5115 0.45 0 1.5708 1.5708</pose>
         </include>
 
         <include>
             <name>apriltag_door_inward_2</name>
             <uri>model://tag36_11_00002</uri>
-            <pose>1.71 0.45 0.45 0 1.5708 -1.5708</pose>
+            <pose>1.71 0.5115 0.45 0 1.5708 -1.5708</pose>
         </include>
 
         <include>
