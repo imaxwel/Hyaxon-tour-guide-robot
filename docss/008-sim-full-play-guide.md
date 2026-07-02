@@ -1,9 +1,9 @@
 # Tour Guide Robot 仿真玩法指南：从初级到高级
 
-> 编写日期：2026-06-30
-> 目标主机：`xiao-5080` / `5080-MS-eSport-Z890M` / Ubuntu 24.04
-> 目标仓库：`/home/xiaozy/4sim/gh-ref/tour-guide-robot/Hyaxon-tour-guide-robot`
-> 操作原则：所有命令都在 `xiao-5080` 上执行，不在 MacBook Pro 本机执行。
+> 编写日期：2026-06-30  
+> 目标主机：`xiao-5080` / `5080-MS-eSport-Z890M` / Ubuntu 24.04  
+> 目标仓库：`/home/xiaozy/4sim/gh-ref/tour-guide-robot/Hyaxon-tour-guide-robot`  
+> 操作原则：所有命令都在 `xiao-5080` 上执行，不在 MacBook Pro 本机执行。  
 > 本文定位：`007-sim-full-funtion-sop.md` 解决怎么完整复现已有功能；本文解决基于这个工程可以怎么玩、怎么逐级扩展。
 
 ---
@@ -159,8 +159,7 @@ ros2 run tf2_ros tf2_echo map base_link
 ros2 service call /controller_manager/list_controllers controller_manager_msgs/srv/ListControllers {}
 ```
 
-验收标准：你能回答机器人为什么会动：Nav2 或行为 server 发 `/cmd_vel`，diffdrive controller 结合 ros2_control/Gazebo 执行，`/odom` 和 TF 再反馈给
-Nav2/RViz。
+验收标准：你能回答机器人为什么会动：Nav2 或行为 server 发 `/cmd_vel`，diffdrive controller 结合 ros2_control/Gazebo 执行，`/odom` 和 TF 再反馈给 Nav2/RViz。
 
 ---
 
@@ -321,8 +320,7 @@ max_hamming: 0
 z_up: true
 ```
 
-重要现实限制：默认 warehouse world 不包含与 `landmarks.yaml` 对应的 AprilTag 模型；自定义 `cardboard_city/world.sdf` 当前也还只是基础世界，没有墙体、
-门或 tag 模型。因此：
+重要现实限制：默认 warehouse world 不包含与 `landmarks.yaml` 对应的 AprilTag 模型；自定义 `cardboard_city/world.sdf` 当前也还只是基础世界，没有墙体、门或 tag 模型。因此：
 
 - 没有可见 tag 时，`/detections` 为空是正常现象。
 - `wait_for_tag_removed` 可以在 tag 不可见时成功，但这只验证 action 逻辑，不代表真实门流程完成。
@@ -339,9 +337,6 @@ z_up: true
 
 ---
 
-
-teracted with background terminal · ssh xiao-5080 "python3 -c 'import sys; from pathlib import Path; Path(\"/home/xiaozy/4sim/gh-ref/tour-guide-
-t/Hyaxon-tour-guide-robot/docss/008-sim-full-play-guide.md\").write_text(sys.stdin.read(), encoding=\"utf-8\")'"
 ## 8. L6：单行为 Action 玩法
 
 目标：不跑完整 mission，直接验证每个行为 server。
@@ -471,8 +466,7 @@ $DC --profile mission up mission
 - 非门 tag 完成后旋转 180 度离开。
 - 最后回到 `home`。
 
-现实限制：当前默认 warehouse 和自定义 `world.sdf` 都没有布置匹配的 AprilTag/门/墙体资产，所以完整 mission 很可能在对齐 tag 阶段超时。这个不是 action
-server 或 Nav2 本身坏了，而是场景资产还没补齐。
+现实限制：当前默认 warehouse 和自定义 `world.sdf` 都没有布置匹配的 AprilTag/门/墙体资产，所以完整 mission 很可能在对齐 tag 阶段超时。这个不是 action server 或 Nav2 本身坏了，而是场景资产还没补齐。
 
 玩法扩展：
 
@@ -555,8 +549,7 @@ src/tourbot_bringup/maps/cardboard_city/map_area.pgm
 src/tourbot_landmarks/config/cardboard_city/landmarks.yaml
 ```
 
-注意：`sim.launch.py` 的默认 `custom_world` 写成了 `cardboard_city.sdf`，但仓库实际文件是 `world.sdf`。并且 TurtleBot4 下游 launch 会自动追加
-`.sdf`，所以传绝对路径时不要带 `.sdf` 后缀。
+注意：`sim.launch.py` 的默认 `custom_world` 写成了 `cardboard_city.sdf`，但仓库实际文件是 `world.sdf`。并且 TurtleBot4 下游 launch 会自动追加 `.sdf`，所以传绝对路径时不要带 `.sdf` 后缀。
 
 自定义 world 启动示例：
 
@@ -578,8 +571,7 @@ $DC run --rm --no-deps dev bash -lc '
 - 重新生成或修正 `map_area.pgm` 和 `map_area.yaml`，保证地图、世界、landmarks 在同一坐标系里。
 - 为每个场景记录一份预期 tour 路线图和可见 tag 截图。
 
-验收标准：机器人从 Gazebo camera 能看到 tag，AprilTag pipeline 发布 detection；Nav2 地图目标点和实际 world 中障碍物位置一致；mission 能至少自动完成一
-个非门 landmark 和一个门 landmark。
+验收标准：机器人从 Gazebo camera 能看到 tag，AprilTag pipeline 发布 detection；Nav2 地图目标点和实际 world 中障碍物位置一致；mission 能至少自动完成一个非门 landmark 和一个门 landmark。
 
 ---
 
@@ -601,8 +593,7 @@ src/tourbot_behaviors/tourbot_behaviors/door_behavior_server.py
 src/tourbot_behaviors/config/door_behavior.yaml
 ```
 
-注意：`mission.launch.py` 直接启动 `door_behavior_server`，没有把 `door_behavior.yaml` 传进去；`tourbot_behaviors/launch/door_behavior.launch.py` 会
-传 YAML，但同时引用了当前不存在的 `manual_door_override_node`。因此要做正式调参，建议先做一个小改造：
+注意：`mission.launch.py` 直接启动 `door_behavior_server`，没有把 `door_behavior.yaml` 传进去；`tourbot_behaviors/launch/door_behavior.launch.py` 会传 YAML，但同时引用了当前不存在的 `manual_door_override_node`。因此要做正式调参，建议先做一个小改造：
 
 - 在 `mission.launch.py` 里给 `door_behavior_server` 传 `door_behavior.yaml`。
 - 或修复 `door_behavior.launch.py`，移除/补齐 `manual_door_override_node`。
@@ -628,3 +619,4 @@ src/tourbot_behaviors/config/door_behavior.yaml
 验收标准：同一个场景重复 10 次，action 成功率、耗时、最大角速度、最终姿态误差都有记录，调参前后能量化对比。
 
 ---
+
