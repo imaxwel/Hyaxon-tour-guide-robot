@@ -7,6 +7,7 @@ from rclpy.action import ActionServer, CancelResponse, GoalResponse
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
+from rclpy.qos import QoSProfile, ReliabilityPolicy
 
 from geometry_msgs.msg import TwistStamped
 from nav_msgs.msg import Odometry
@@ -38,6 +39,18 @@ class DoorBehaviorServer(Node):
         self.declare_parameter("forward_speed_default", 0.18)
         self.declare_parameter("control_rate_hz", 20.0)
         self.declare_parameter("use_zero_cmd_stamp", False)
+        self.declare_parameter("odom_wait_timeout_sec", 2.0)
+        self.declare_parameter("enforce_workspace_bounds", False)
+        self.declare_parameter("workspace_min_x", -1000.0)
+        self.declare_parameter("workspace_max_x", 1000.0)
+        self.declare_parameter("workspace_min_y", -1000.0)
+        self.declare_parameter("workspace_max_y", 1000.0)
+        self.declare_parameter("max_lateral_drift", 0.0)
+        self.declare_parameter("max_linear_motion_sec", 0.0)
+        self.declare_parameter("linear_stall_timeout_sec", 0.0)
+        self.declare_parameter("linear_stall_min_progress", 0.02)
+        self.declare_parameter("stop_command_repeats", 1)
+        self.declare_parameter("stop_command_period_sec", 0.05)
 
         cmd_vel_topic = self.get_parameter("cmd_vel_topic").value
         odom_topic = self.get_parameter("odom_topic").value
@@ -62,6 +75,63 @@ class DoorBehaviorServer(Node):
         self.use_zero_cmd_stamp = bool(
             self.get_parameter("use_zero_cmd_stamp").value
         )
+        self.odom_wait_timeout_sec = float(
+            self.get_parameter("odom_wait_timeout_sec").value
+        )
+        self.enforce_workspace_bounds = bool(
+            self.get_parameter("enforce_workspace_bounds").value
+        )
+        self.workspace_min_x = float(self.get_parameter("workspace_min_x").value)
+        self.workspace_max_x = float(self.get_parameter("workspace_max_x").value)
+        self.workspace_min_y = float(self.get_parameter("workspace_min_y").value)
+        self.workspace_max_y = float(self.get_parameter("workspace_max_y").value)
+        self.max_lateral_drift = float(
+            self.get_parameter("max_lateral_drift").value
+        )
+        self.max_linear_motion_sec = float(
+            self.get_parameter("max_linear_motion_sec").value
+        )
+        self.linear_stall_timeout_sec = float(
+            self.get_parameter("linear_stall_timeout_sec").value
+        )
+        self.linear_stall_min_progress = float(
+            self.get_parameter("linear_stall_min_progress").value
+        )
+        self.stop_command_repeats = int(
+            self.get_parameter("stop_command_repeats").value
+        )
+        self.stop_command_period_sec = float(
+            self.get_parameter("stop_command_period_sec").value
+        )
+
+        if (
+            self.workspace_min_x >= self.workspace_max_x
+            or self.workspace_min_y >= self.workspace_max_y
+        ):
+            self.get_logger().warn(
+                "Invalid workspace bounds; workspace guard is disabled."
+            )
+            self.enforce_workspace_bounds = False
+
+        if self.odom_wait_timeout_sec < 0.0:
+            self.get_logger().warn("Invalid odom_wait_timeout_sec; using 2.0 s.")
+            self.odom_wait_timeout_sec = 2.0
+
+        if self.linear_stall_min_progress <= 0.0:
+            self.get_logger().warn(
+                "Invalid linear_stall_min_progress; using 0.02 m."
+            )
+            self.linear_stall_min_progress = 0.02
+
+        if self.stop_command_repeats < 1:
+            self.get_logger().warn("Invalid stop_command_repeats; using 1.")
+            self.stop_command_repeats = 1
+
+        if self.stop_command_period_sec < 0.0:
+            self.get_logger().warn(
+                "Invalid stop_command_period_sec; using 0.05 s."
+            )
+            self.stop_command_period_sec = 0.05
 
         self.cmd_pub = self.create_publisher(
             TwistStamped,
@@ -69,11 +139,14 @@ class DoorBehaviorServer(Node):
             10,
         )
 
+        odom_qos = QoSProfile(depth=10)
+        odom_qos.reliability = ReliabilityPolicy.BEST_EFFORT
+
         self.odom_sub = self.create_subscription(
             Odometry,
             odom_topic,
             self.odom_cb,
-            10,
+            odom_qos,
             callback_group=self.cb_group,
         )
 
@@ -96,6 +169,34 @@ class DoorBehaviorServer(Node):
         if self.use_zero_cmd_stamp:
             self.get_logger().info(
                 "Publishing velocity commands with zero TwistStamped timestamps."
+            )
+        if self.enforce_workspace_bounds:
+            self.get_logger().info(
+                "Workspace guard enabled: "
+                f"x=[{self.workspace_min_x:.2f}, {self.workspace_max_x:.2f}], "
+                f"y=[{self.workspace_min_y:.2f}, {self.workspace_max_y:.2f}]."
+            )
+        if self.max_lateral_drift > 0.0:
+            self.get_logger().info(
+                f"Door traversal corridor enabled: "
+                f"max_lateral_drift={self.max_lateral_drift:.2f} m."
+            )
+        if self.max_linear_motion_sec > 0.0:
+            self.get_logger().info(
+                f"Linear motion timeout enabled: "
+                f"max_linear_motion_sec={self.max_linear_motion_sec:.1f} s."
+            )
+        if self.linear_stall_timeout_sec > 0.0:
+            self.get_logger().info(
+                "Linear stall guard enabled: "
+                f"timeout={self.linear_stall_timeout_sec:.1f} s, "
+                f"min_progress={self.linear_stall_min_progress:.3f} m."
+            )
+        if self.stop_command_repeats > 1:
+            self.get_logger().info(
+                "Repeated stop commands enabled: "
+                f"count={self.stop_command_repeats}, "
+                f"period={self.stop_command_period_sec:.2f} s."
             )
 
     def goal_callback(self, goal_request: DoorTraverse.Goal) -> int:
@@ -165,8 +266,14 @@ class DoorBehaviorServer(Node):
         goal_handle.publish_feedback(feedback)
 
     def stop_robot(self) -> None:
-        msg = self.make_twist_stamped()
-        self.cmd_pub.publish(msg)
+        for index in range(self.stop_command_repeats):
+            msg = self.make_twist_stamped()
+            self.cmd_pub.publish(msg)
+            if (
+                index + 1 < self.stop_command_repeats
+                and self.stop_command_period_sec > 0.0
+            ):
+                time.sleep(self.stop_command_period_sec)
 
     def set_linear_velocity(self, speed: float) -> None:
         msg = self.make_twist_stamped()
@@ -186,6 +293,20 @@ class DoorBehaviorServer(Node):
         pos = self.current_odom.pose.pose.position
         return (float(pos.x), float(pos.y))
 
+    def wait_for_xy(self) -> Optional[Tuple[float, float]]:
+        deadline = time.monotonic() + self.odom_wait_timeout_sec
+
+        while rclpy.ok():
+            xy = self.get_xy()
+
+            if xy is not None:
+                return xy
+
+            if time.monotonic() >= deadline:
+                return None
+
+            time.sleep(0.05)
+
     def distance_from(self, start_xy: Tuple[float, float]) -> Optional[float]:
         current_xy = self.get_xy()
 
@@ -196,6 +317,40 @@ class DoorBehaviorServer(Node):
         dy = current_xy[1] - start_xy[1]
 
         return math.sqrt(dx * dx + dy * dy)
+
+    def is_within_workspace(self, xy: Tuple[float, float]) -> bool:
+        if not self.enforce_workspace_bounds:
+            return True
+
+        x, y = xy
+        return (
+            self.workspace_min_x <= x <= self.workspace_max_x
+            and self.workspace_min_y <= y <= self.workspace_max_y
+        )
+
+    def workspace_violation_message(self, xy: Tuple[float, float]) -> str:
+        x, y = xy
+        return (
+            f"Door traversal stopped at workspace boundary: "
+            f"pose=({x:.2f}, {y:.2f}), "
+            f"bounds=x[{self.workspace_min_x:.2f}, {self.workspace_max_x:.2f}], "
+            f"y[{self.workspace_min_y:.2f}, {self.workspace_max_y:.2f}]"
+        )
+
+    def motion_offsets_from(
+        self,
+        start_xy: Tuple[float, float],
+        start_yaw: float,
+        current_xy: Tuple[float, float],
+    ) -> Tuple[float, float]:
+        dx = current_xy[0] - start_xy[0]
+        dy = current_xy[1] - start_xy[1]
+        cos_yaw = math.cos(start_yaw)
+        sin_yaw = math.sin(start_yaw)
+
+        longitudinal = dx * cos_yaw + dy * sin_yaw
+        lateral = -dx * sin_yaw + dy * cos_yaw
+        return longitudinal, lateral
 
     def normalize_angle(self, angle: float) -> float:
         while angle > math.pi:
@@ -255,12 +410,26 @@ class DoorBehaviorServer(Node):
             self.stop_robot()
             return True, "No motion requested"
 
-        start_xy = self.get_xy()
+        start_xy = self.wait_for_xy()
 
         if start_xy is None:
             self.stop_robot()
             return False, "No odometry available"
 
+        if not self.is_within_workspace(start_xy):
+            self.stop_robot()
+            return False, self.workspace_violation_message(start_xy)
+
+        use_motion_corridor = self.max_lateral_drift > 0.0
+        start_yaw = self.current_yaw
+
+        if use_motion_corridor and start_yaw is None:
+            self.stop_robot()
+            return False, "No odometry yaw available for traversal corridor guard"
+
+        start_time = time.monotonic()
+        last_progress_time = start_time
+        last_progress_distance = 0.0
         sleep_dt = 1.0 / self.control_rate_hz
 
         while rclpy.ok():
@@ -269,11 +438,59 @@ class DoorBehaviorServer(Node):
                 goal_handle.canceled()
                 return False, "Canceled"
 
-            distance = self.distance_from(start_xy)
+            current_xy = self.get_xy()
 
-            if distance is None:
+            if current_xy is None:
                 self.stop_robot()
                 return False, "Lost odometry during motion"
+
+            if not self.is_within_workspace(current_xy):
+                self.stop_robot()
+                return False, self.workspace_violation_message(current_xy)
+
+            now = time.monotonic()
+
+            if (
+                self.max_linear_motion_sec > 0.0
+                and now - start_time > self.max_linear_motion_sec
+            ):
+                self.stop_robot()
+                return False, (
+                    "Timed out while driving linear door segment "
+                    f"after {self.max_linear_motion_sec:.1f} seconds"
+                )
+
+            distance = math.dist(start_xy, current_xy)
+
+            if use_motion_corridor:
+                longitudinal, lateral = self.motion_offsets_from(
+                    start_xy,
+                    start_yaw,
+                    current_xy,
+                )
+                distance = max(0.0, longitudinal)
+
+                if abs(lateral) > self.max_lateral_drift:
+                    self.stop_robot()
+                    return False, (
+                        "Door traversal left the allowed corridor: "
+                        f"lateral_drift={lateral:.2f} m, "
+                        f"limit={self.max_lateral_drift:.2f} m"
+                    )
+
+            if distance >= last_progress_distance + self.linear_stall_min_progress:
+                last_progress_distance = distance
+                last_progress_time = now
+            elif (
+                self.linear_stall_timeout_sec > 0.0
+                and now - last_progress_time > self.linear_stall_timeout_sec
+            ):
+                self.stop_robot()
+                return False, (
+                    "Door traversal made no progress for "
+                    f"{self.linear_stall_timeout_sec:.1f} seconds "
+                    f"(distance={distance:.2f} m, target={target_distance:.2f} m)"
+                )
 
             self.publish_feedback(goal_handle, state_name, distance)
 

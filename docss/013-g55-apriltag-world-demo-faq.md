@@ -1,6 +1,6 @@
 # 013 · G55 AprilTag world demo FAQ
 
-> 日期：2026-07-01  
+> 日期：2026-07-02
 > 主机：`xiao-5080` / Ubuntu 24.04 / ROS 2 Jazzy / Gazebo Harmonic / RTX 5080 Docker 环境
 
 ## Q1：为什么按 012 的命令启动会报 `exit code 139`？
@@ -212,3 +212,82 @@ ros2 launch tourbot_bringup door_apriltag_visual_demo.launch.py \
 ```
 
 注意：这个 visual launch 已经包含 action servers 和 demo node，不能和旧的 `door_apriltag_demo.launch.py` 在同一 `ROS_DOMAIN_ID` 里同时运行。
+
+## Q12：为什么 3D door demo 穿门后像是不考虑 cardboard_city 边界，还会沿外围右侧继续走？
+
+这是两个层面的约束缺失叠加造成的。
+
+第一层是 Gazebo 物理世界。原 `cardboard_city` 的墙、门板和纸箱只建了 `<visual>`，没有对应 `<collision>`。Gazebo 只用 collision 做物理接触，视觉墙只是给人看的，因此机器人不会被边界墙挡住。相关旧注释也明确写过这些 cardboard panels 是 visual-only。
+
+第二层是控制闭环。`016-gazebo-apriltag-door-3d-sop` 的 3D door demo 为了隔离门识别/开门/穿门链路，启动 world 时使用：
+
+```text
+start_navigation:=false
+```
+
+穿门阶段由 `door_behavior_server` 直接向 `/diffdrive_controller/cmd_vel` 发布速度，不经过 Nav2 的 global/local costmap、planner、controller 或 collision monitor。旧实现只按 `/odom` 的欧氏距离执行“直线走固定距离”，没有穿门走廊、最长运动时间或无进展 watchdog。因此只要初始姿态、里程计或观察角度有偏差，行为层也不会主动判断“已经偏离穿门走廊/撞墙后没有继续前进”。
+
+当前修复分两层：
+
+- `src/tourbot_bringup/worlds/cardboard_city/world.sdf`
+- `src/tourbot_bringup/worlds/cardboard_city/world_no_sensors.sdf`
+
+这两个 world 已新增 `cardboard_city_static_collisions`，给四周边界墙和纸箱障碍补了 matching collision，让 Gazebo 物理边界与可视边界一致。门板仍保持 visual-only，因为当前 demo 用 Gazebo `set_pose` 模拟开门；带 collision 的真实门应作为后续 SITL/高保真模型，用 joint、limit、damping 和随门状态变化的 collision 单独实现。
+
+同时 `door_behavior_server` 已新增行为层保护，并在 `door_apriltag_gazebo_demo.launch.py` 中为 3D demo 使用 Gazebo ground-truth 位姿打开 workspace、走廊和进展 guard：
+
+```text
+odom_topic: /sim_ground_truth_pose
+enforce_workspace_bounds: true
+workspace_min_x: -0.45
+workspace_max_x: 4.15
+workspace_min_y: -1.20
+workspace_max_y: 1.20
+max_lateral_drift: 0.35
+max_linear_motion_sec: 90.0
+linear_stall_timeout_sec: 20.0
+linear_stall_min_progress: 0.01
+stop_command_repeats: 8
+stop_command_period_sec: 0.05
+```
+
+注意：`/odom` 仍应按局部里程计处理，不应默认假设它就是 Gazebo world/map 坐标。这个 Gazebo door demo 已把 `door_behavior_server` 的 `odom_topic` 改为 `/sim_ground_truth_pose`，该话题由 Gazebo pose republisher 输出，坐标系是 `world_demo`，因此可以启用绝对 workspace guard 和基于 yaw 的穿门走廊 guard。真实机器人或 Nav2 场景不要直接照搬这个 ground-truth topic；应使用 map/world 对齐后的定位输入。
+
+一键 `door_apriltag_gazebo_world_demo.launch.py` 还修正了机器人初始位姿设置方式：`sim.launch.py` 现在会把 `custom_robot_x/y/z/yaw` 透传给 TurtleBot4 spawn，一键入口默认不再在 controller 已启动后额外 `set_pose`。运行后 teleport 会让 Gazebo world pose 和 diffdrive `/odom` 更容易拉开，是这类 demo 中应避免的做法。由于完整 TurtleBot4 spawn 会同时生成 `standard_dock` 并启动 Create3 `motion_control`，它会在 docked/接触/reflex 状态下向 `/diffdrive_controller/cmd_vel` 发布反向旋转命令；这和本 SOP 的低层门行为直控底盘会形成两个控制源竞争。因此一键入口会给 `sim.launch.py` 传 `custom_spawn_with_create3_nodes:=false`，使用项目内 `turtlebot4_door_demo_spawn.launch.py`：只生成 TurtleBot4、bridge、ros2_control、ground-truth/sensor republisher 和必要 TF，不生成 dock，也不启动 `motion_control`。两终端模式仍可由 `door_apriltag_gazebo_demo.launch.py` 执行一次 pose reset，因为终端 A 的通用 sim 命令默认不指定门前位姿；若终端 A 使用完整 TurtleBot4 spawn，则不应再让门行为和 `motion_control` 同时写底层 cmd_vel。
+
+3D demo 的默认 `door_forward_distance` 也从原先的 `0.75` 调整为 `0.60`。原因是补上真实静态 collision 后，穿门动作应只清过门槛，不应把机器人推进到外围墙附近。
+
+修复后的正常启动日志里应看到：
+
+```text
+Linear motion timeout enabled: max_linear_motion_sec=90.0 s.
+Linear stall guard enabled: timeout=20.0 s, min_progress=0.010 m.
+Repeated stop commands enabled: count=8, period=0.05 s.
+```
+
+如果机器人被新加的物理边界挡住后不再产生有效里程计进展，预期行为不再是一直向边界发速度，而是停止并让 `/door_traverse` 失败，日志类似：
+
+```text
+Door traversal made no progress for 20.0 seconds (distance=... m, target=... m)
+```
+
+如果在位姿/航向坐标正确对齐的场景中启用了走廊 guard，也可能看到：
+
+```text
+Door traversal left the allowed corridor: lateral_drift=... m, limit=... m
+```
+
+如果启用了绝对 workspace guard，并且所用位姿确实是全局 workspace/map/world 坐标，也可能看到：
+
+```text
+Door traversal stopped at workspace boundary: pose=(..., ...), bounds=...
+```
+
+验证时继续使用 016 的一键命令即可。成功判据仍是：
+
+```text
+door_traverse succeeded: Door traversal complete for tag_id=1, door_type=OUTWARD
+Door AprilTag demo complete: closed tag detected, tag removed, and door traversal finished.
+```
+
+如果故意测试行为层保护，可以把初始位姿或朝向调到会撞上静态墙的位置。此时 demo 应由无进展 watchdog 停止并失败，这说明行为层保护生效；不要把这种失败当成 AprilTag 或 Gazebo 相机识别问题。

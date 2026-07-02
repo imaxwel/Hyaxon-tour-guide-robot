@@ -12,3 +12,18 @@ door_behavior_server:
 
     control_rate_hz: 10.0
     wait_for_open_timeout: 30.0
+    odom_wait_timeout_sec: 2.0
+
+    # Disabled by default for generic deployments. Gazebo door demos enable
+    # these guards in launch so a local door maneuver cannot leave the scene.
+    enforce_workspace_bounds: false
+    workspace_min_x: -1000.0
+    workspace_max_x: 1000.0
+    workspace_min_y: -1000.0
+    workspace_max_y: 1000.0
+    max_lateral_drift: 0.0
+    max_linear_motion_sec: 0.0
+    linear_stall_timeout_sec: 0.0
+    linear_stall_min_progress: 0.02
+    stop_command_repeats: 1
+    stop_command_period_sec: 0.05

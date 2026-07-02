@@ -30,6 +30,8 @@ def generate_launch_description():
     start_image_view = LaunchConfiguration("start_image_view")
     start_gazebo_gui = LaunchConfiguration("start_gazebo_gui")
     gazebo_gui_command = LaunchConfiguration("gazebo_gui_command")
+    reset_robot_pose_after_spawn = LaunchConfiguration("reset_robot_pose_after_spawn")
+    move_standard_dock_out_of_scene = LaunchConfiguration("move_standard_dock_out_of_scene")
 
     tourbot_bringup = FindPackageShare("tourbot_bringup")
 
@@ -53,6 +55,7 @@ def generate_launch_description():
             "custom_robot_y": custom_robot_y,
             "custom_robot_z": custom_robot_z,
             "custom_robot_yaw": custom_robot_yaw,
+            "custom_spawn_with_create3_nodes": "false",
         }.items(),
     )
 
@@ -83,6 +86,27 @@ def generate_launch_description():
                 "yaw": custom_robot_yaw,
                 "service_timeout_ms": 3000,
                 "repeat_count": 5,
+                "repeat_period_sec": 0.5,
+            }
+        ],
+    )
+
+    stage_standard_dock_pose = Node(
+        package="tourbot_bringup",
+        executable="gazebo_entity_pose_setter",
+        name="gazebo_standard_dock_staging_pose",
+        output="screen",
+        condition=IfCondition(move_standard_dock_out_of_scene),
+        parameters=[
+            {
+                "world_name": world_name,
+                "entity_name": "standard_dock",
+                "x": -10.0,
+                "y": -10.0,
+                "z": 0.0,
+                "yaw": 0.0,
+                "service_timeout_ms": 3000,
+                "repeat_count": 12,
                 "repeat_period_sec": 0.5,
             }
         ],
@@ -159,12 +183,34 @@ def generate_launch_description():
                 default_value="vglrun -d :0 gz sim -g -v 2",
                 description="Shell command used when start_gazebo_gui is true.",
             ),
+            DeclareLaunchArgument(
+                "reset_robot_pose_after_spawn",
+                default_value="false",
+                description=(
+                    "Re-apply the initial robot pose after spawn. Keep false for "
+                    "normal runs; use true only when debugging spawn pose drift."
+                ),
+            ),
+            DeclareLaunchArgument(
+                "move_standard_dock_out_of_scene",
+                default_value="false",
+                description=(
+                    "Move the TurtleBot4 standard dock outside cardboard_city "
+                    "before starting the door behavior demo. Only useful when "
+                    "custom_spawn_with_create3_nodes is true."
+                ),
+            ),
             SetEnvironmentVariable("ROS_DOMAIN_ID", ros_domain_id),
             SetEnvironmentVariable("GZ_PARTITION", gz_partition),
             SetEnvironmentVariable("IGN_PARTITION", gz_partition),
             start_sim,
             TimerAction(period=8.0, actions=[start_gazebo_gui_process]),
-            TimerAction(period=10.0, actions=[set_initial_robot_pose]),
+            TimerAction(period=9.0, actions=[stage_standard_dock_pose]),
+            TimerAction(
+                period=10.0,
+                actions=[set_initial_robot_pose],
+                condition=IfCondition(reset_robot_pose_after_spawn),
+            ),
             TimerAction(period=17.0, actions=[start_demo]),
         ]
     )

@@ -87,9 +87,24 @@ def generate_launch_description():
         parameters=[
             {
                 "use_sim_time": False,
-                "odom_topic": "/odom",
+                "odom_topic": "/sim_ground_truth_pose",
                 "cmd_vel_topic": "/diffdrive_controller/cmd_vel",
                 "use_zero_cmd_stamp": True,
+                "odom_wait_timeout_sec": 5.0,
+                # Use Gazebo ground-truth pose for demo-only guards; the
+                # lightweight spawn moves the model through Gazebo cmd_vel and
+                # does not rely on diffdrive /odom for this open-loop behavior.
+                "enforce_workspace_bounds": True,
+                "workspace_min_x": -0.45,
+                "workspace_max_x": 4.15,
+                "workspace_min_y": -1.20,
+                "workspace_max_y": 1.20,
+                "max_lateral_drift": 0.35,
+                "max_linear_motion_sec": 90.0,
+                "linear_stall_timeout_sec": 20.0,
+                "linear_stall_min_progress": 0.01,
+                "stop_command_repeats": 8,
+                "stop_command_period_sec": 0.05,
             }
         ],
     )
@@ -191,7 +206,7 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "door_forward_distance",
-                default_value="0.75",
+                default_value="0.60",
                 description="Forward distance used by the door traversal action.",
             ),
             DeclareLaunchArgument(

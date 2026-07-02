@@ -341,3 +341,5 @@ find . -maxdepth 3 \( -name 'core' -o -name 'core.*' \) -printf '%p %s\n'
   - 同一次 GUI 入口中仍有 2 条 `libEGL ... dri2`，来源是独立 GUI client；这次没有拖慢穿门，也没有导致旧速度指令丢弃。
 
 注意：`turtlebot4_node` 偶尔会打印 `Service stop_motor unavailable`、`Service oakd/start_camera unavailable`，这来自 TurtleBot4 HMI/motion_control 层，不影响本 SOP 的 AprilTag 检测、开门和穿门成功判据。
+
+2026-07-02 边界修复后，`cardboard_city` 静态墙和纸箱障碍已补 collision。3D door demo 的默认 `door_forward_distance` 随之从 `0.75` 调整为 `0.60`，目标是清过门槛后停止，而不是把机器人推进到外围边界附近。`sim.launch.py` 已把 `custom_robot_x/y/z/yaw` 透传给 TurtleBot4 spawn，一键入口默认不再在 controller 启动后额外 teleport 机器人，并使用 `custom_spawn_with_create3_nodes:=false` 走项目内 `turtlebot4_door_demo_spawn.launch.py`，避免完整 TurtleBot4 spawn 自动生成的 `standard_dock` 和 Create3 `motion_control` 与门行为同时写 `/diffdrive_controller/cmd_vel`。`door_behavior_server` 也增加了可选 workspace/走廊 guard、最长运动时间、无进展 watchdog 和重复 stop 命令；这个一键 Gazebo demo 不把 diffdrive `/odom` 当作 Gazebo world 坐标，而是用 `/sim_ground_truth_pose` 驱动行为层的 workspace/走廊/进展判断。边界原因和验证方式见 `013-g55-apriltag-world-demo-faq.md` 的 Q12。

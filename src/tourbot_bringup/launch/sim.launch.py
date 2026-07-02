@@ -11,6 +11,7 @@ from launch.substitutions import (
     EnvironmentVariable,
     LaunchConfiguration,
     PathJoinSubstitution,
+    PythonExpression,
 )
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
@@ -31,6 +32,7 @@ def generate_launch_description():
     custom_robot_y = LaunchConfiguration('custom_robot_y')
     custom_robot_z = LaunchConfiguration('custom_robot_z')
     custom_robot_yaw = LaunchConfiguration('custom_robot_yaw')
+    custom_spawn_with_create3_nodes = LaunchConfiguration('custom_spawn_with_create3_nodes')
     custom_map = LaunchConfiguration('custom_map')
     start_navigation = LaunchConfiguration('start_navigation')
     cardboard_city_model_path = PathJoinSubstitution([
@@ -53,6 +55,14 @@ def generate_launch_description():
             turtlebot4_gz_bringup,
             'launch',
             'turtlebot4_spawn.launch.py',
+        ])
+    )
+
+    turtlebot4_door_demo_spawn_launch = PythonLaunchDescriptionSource(
+        PathJoinSubstitution([
+            tourbot_bringup,
+            'launch',
+            'turtlebot4_door_demo_spawn.launch.py',
         ])
     )
 
@@ -96,10 +106,6 @@ def generate_launch_description():
             'slam': 'false',
             'localization': 'false',
             'rviz': 'false',
-            'x': custom_robot_x,
-            'y': custom_robot_y,
-            'z': custom_robot_z,
-            'yaw': custom_robot_yaw,
         }.items(),
     )
 
@@ -113,7 +119,10 @@ def generate_launch_description():
 
     custom_robot_spawn = IncludeLaunchDescription(
         turtlebot4_spawn_launch,
-        condition=IfCondition(use_custom_sim),
+        condition=IfCondition(PythonExpression([
+            "'", use_custom_sim, "' == 'true' and '",
+            custom_spawn_with_create3_nodes, "' == 'true'",
+        ])),
         launch_arguments={
             'world': custom_world_name,
             'model': 'standard',
@@ -121,6 +130,27 @@ def generate_launch_description():
             'slam': 'false',
             'localization': 'false',
             'rviz': 'false',
+            'x': custom_robot_x,
+            'y': custom_robot_y,
+            'z': custom_robot_z,
+            'yaw': custom_robot_yaw,
+        }.items(),
+    )
+
+    custom_door_demo_robot_spawn = IncludeLaunchDescription(
+        turtlebot4_door_demo_spawn_launch,
+        condition=IfCondition(PythonExpression([
+            "'", use_custom_sim, "' == 'true' and '",
+            custom_spawn_with_create3_nodes, "' == 'false'",
+        ])),
+        launch_arguments={
+            'world': custom_world_name,
+            'model': 'standard',
+            'use_sim_time': 'true',
+            'x': custom_robot_x,
+            'y': custom_robot_y,
+            'z': custom_robot_z,
+            'yaw': custom_robot_yaw,
         }.items(),
     )
 
@@ -259,6 +289,16 @@ def generate_launch_description():
         ),
 
         DeclareLaunchArgument(
+            'custom_spawn_with_create3_nodes',
+            default_value='true',
+            description=(
+                'Use the full TurtleBot4 spawn including dock and Create3 '
+                'behavior nodes. Set false for low-level door demos that '
+                'publish directly to diffdrive_controller/cmd_vel.'
+            ),
+        ),
+
+        DeclareLaunchArgument(
             'custom_map',
             default_value=PathJoinSubstitution([
                 tourbot_bringup,
@@ -298,6 +338,7 @@ def generate_launch_description():
         default_sim,
         custom_gazebo,
         custom_robot_spawn,
+        custom_door_demo_robot_spawn,
         custom_clock_bridge,
         odom_tf_compat,
         nav2_post_localization_activator,
