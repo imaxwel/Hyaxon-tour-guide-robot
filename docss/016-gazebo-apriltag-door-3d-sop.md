@@ -118,6 +118,8 @@ docker compose -f docker_stuff/compose.yaml run --rm --no-deps dev bash -lc '
 
 说明：独立 GUI client 仍可能打印少量 `libEGL warning: egl: failed to create dri2 screen`。这与旧命令不同，警告只来自 GUI client，不再影响 headless server、controller 和穿门闭环。不要为了压这条日志强制设置 `QT_XCB_GL_INTEGRATION=xcb_glx`，实测会让 Gazebo `/clock` 异常，导致穿门阶段卡住。
 
+退出方式：优先在启动 launch 的终端按一次 `Ctrl-C`，等待 ROS launch 自行回收各节点。2026-07-02 已修复本 demo 内 Python 节点在退出阶段的两个噪音来源：ROS context 失效后继续 publish stop cmd，以及重复 `rclpy.shutdown()`。如果仍看到 `gz sim` 在最后打印 `Segmentation fault (core dumped)`，这是 Gazebo GUI/server 进程的退出路径问题，不代表 AprilTag 开门/穿门闭环失败；以第 5 节成功判据为准。
+
 GUI 中应能看到：
 
 1. `cardboard_city` 3D world。
@@ -310,12 +312,14 @@ docker ps -a --filter 'name=tourbot-door-demo-' --format '{{.ID}}' | xargs -r do
 docker ps -a --filter 'name=tourbot-door-demo-' --format '{{.ID}}' | xargs -r docker rm
 ```
 
-确认没有 core 文件：
+确认是否产生 core 文件：
 
 ```bash
 cd ~/4sim/gh-ref/tour-guide-robot/Hyaxon-tour-guide-robot
 find . -maxdepth 3 \( -name 'core' -o -name 'core.*' \) -printf '%p %s\n'
 ```
+
+如果只在退出时产生 `./core`，且第 5 节成功判据已经全部出现，优先按 Gazebo 退出崩溃处理；不要把它和 Python 节点 traceback 混在一起判断。需要保留现场时先不要删除 core。
 
 ## 8. 本次实测记录
 
@@ -341,5 +345,9 @@ find . -maxdepth 3 \( -name 'core' -o -name 'core.*' \) -printf '%p %s\n'
   - 同一次 GUI 入口中仍有 2 条 `libEGL ... dri2`，来源是独立 GUI client；这次没有拖慢穿门，也没有导致旧速度指令丢弃。
 
 注意：`turtlebot4_node` 偶尔会打印 `Service stop_motor unavailable`、`Service oakd/start_camera unavailable`，这来自 TurtleBot4 HMI/motion_control 层，不影响本 SOP 的 AprilTag 检测、开门和穿门成功判据。
+
+2026-07-02 退出修复：`align_to_apriltag_server`、`door_behavior_server`、`wait_for_tag_removed_server`、`door_state_gazebo_controller`、`odom_tf_compat`、`nav2_post_localization_activator` 和 `door_apriltag_demo_node` 已改为幂等 shutdown；退出时 context 已失效就不再发布 stop cmd 或重复 `rclpy.shutdown()`。
+
+2026-07-02 退出验证：使用独立 `ROS_DOMAIN_ID=177` / `GZ_PARTITION=tourbot_apriltag_exit_177` 运行 GUI 一键模式，日志出现 `door_traverse succeeded` 和 `Door AprilTag demo complete`。随后向 `ros2 launch` 发送 SIGINT，容器正常退出；日志没有 `Traceback`、`RCLError`、`failed to shutdown`、`publisher context is invalid` 或 `Segmentation fault`。退出阶段仍可能看到少量 `ros_gz_bridge` 的 `process has died`，这属于 Gazebo/bridge teardown 噪音，不是 Python 节点崩溃。
 
 2026-07-02 边界修复后，`cardboard_city` 静态墙和纸箱障碍已补 collision。3D door demo 的默认 `door_forward_distance` 随之从 `0.75` 调整为 `0.60`，目标是清过门槛后停止，而不是把机器人推进到外围边界附近。`sim.launch.py` 已把 `custom_robot_x/y/z/yaw` 透传给 TurtleBot4 spawn，一键入口默认不再在 controller 启动后额外 teleport 机器人，并使用 `custom_spawn_with_create3_nodes:=false` 走项目内 `turtlebot4_door_demo_spawn.launch.py`，避免完整 TurtleBot4 spawn 自动生成的 `standard_dock` 和 Create3 `motion_control` 与门行为同时写 `/diffdrive_controller/cmd_vel`。`door_behavior_server` 也增加了可选 workspace/走廊 guard、最长运动时间、无进展 watchdog 和重复 stop 命令；这个一键 Gazebo demo 不把 diffdrive `/odom` 当作 Gazebo world 坐标，而是用 `/sim_ground_truth_pose` 驱动行为层的 workspace/走廊/进展判断。边界原因和验证方式见 `013-g55-apriltag-world-demo-faq.md` 的 Q12。

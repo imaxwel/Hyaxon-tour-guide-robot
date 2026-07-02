@@ -4,13 +4,22 @@ from typing import Optional
 import rclpy
 from rclpy.action import ActionServer, CancelResponse, GoalResponse
 from rclpy.callback_groups import ReentrantCallbackGroup
-from rclpy.executors import MultiThreadedExecutor
+from rclpy.executors import ExternalShutdownException, MultiThreadedExecutor
 from rclpy.node import Node
 
 from apriltag_msgs.msg import AprilTagDetectionArray
 from tourbot_interfaces.action import WaitForTagRemoved
 
 #TODO: Add beeping sound to alert nearby humans for help 
+
+
+def shutdown_rclpy_if_needed() -> None:
+    try:
+        if rclpy.ok():
+            rclpy.shutdown()
+    except Exception:
+        pass
+
 
 class WaitForTagRemovedServer(Node):
     """Action server that waits for a specified AprilTag to be removed from the camera's field of view for a certain duration, with a timeout.
@@ -218,8 +227,6 @@ class WaitForTagRemovedServer(Node):
             time.sleep(sleep_dt)
 
         # rclpy is not okay, ROS is getting shut down.
-        goal_handle.abort()
-
         result.success = False
         result.message = "ROS shutdown during WaitForTagRemoved."
         return result
@@ -235,12 +242,12 @@ def main(args=None):
 
     try:
         executor.spin()
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
         executor.shutdown()
         node.destroy_node()
-        rclpy.shutdown()
+        shutdown_rclpy_if_needed()
 
 # Allow running the node directly with `python wait_for_tag_removed_server.py`
 if __name__ == "__main__":

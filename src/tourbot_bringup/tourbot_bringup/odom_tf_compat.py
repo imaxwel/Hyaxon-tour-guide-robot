@@ -3,6 +3,7 @@
 from geometry_msgs.msg import TransformStamped
 from nav_msgs.msg import Odometry
 import rclpy
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from tf2_ros import TransformBroadcaster
@@ -58,14 +59,24 @@ class OdomTfCompat(Node):
         self._tf_broadcaster.sendTransform(transform)
 
 
+def shutdown_rclpy_if_needed():
+    try:
+        if rclpy.ok():
+            rclpy.shutdown()
+    except Exception:
+        pass
+
+
 def main(args=None):
     rclpy.init(args=args)
     node = OdomTfCompat()
     try:
         rclpy.spin(node)
+    except (KeyboardInterrupt, ExternalShutdownException):
+        pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        shutdown_rclpy_if_needed()
 
 
 if __name__ == '__main__':

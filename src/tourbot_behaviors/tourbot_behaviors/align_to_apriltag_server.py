@@ -4,7 +4,7 @@ from typing import Optional
 import rclpy
 from rclpy.action import ActionServer, CancelResponse, GoalResponse
 from rclpy.callback_groups import ReentrantCallbackGroup
-from rclpy.executors import MultiThreadedExecutor
+from rclpy.executors import ExternalShutdownException, MultiThreadedExecutor
 from rclpy.node import Node
 
 from geometry_msgs.msg import TwistStamped
@@ -18,6 +18,15 @@ from tourbot_interfaces.action import AlignToAprilTag
 SEARCH_ANGULAR_SPEED = 0.20
 ALIGN_KP = 0.003
 MAX_ANGULAR_SPEED = 0.30
+
+
+def shutdown_rclpy_if_needed() -> None:
+    try:
+        if rclpy.ok():
+            rclpy.shutdown()
+    except Exception:
+        pass
+
 
 class AlignToAprilTagServer(Node):
     """ ROS 2 action server that aligns the robot to a specified AprilTag by rotating in place until the tag is centered in the camera's field of view.
@@ -138,15 +147,35 @@ class AlignToAprilTagServer(Node):
 
     # Helper method to stop the robot by publishing a zero velocity command.
     def stop_robot(self):
+        if not rclpy.ok():
+            return
+
         msg = self.make_twist_stamped()
-        self.cmd_vel_pub.publish(msg)
+        self.publish_cmd(msg)
 
     # Helper method to publish an angular velocity command to rotate the robot.
     def publish_angular_velocity(self, angular_z: float):
+        if not rclpy.ok():
+            return
+
         msg = self.make_twist_stamped()
         msg.twist.linear.x = 0.0
         msg.twist.angular.z = float(angular_z)
-        self.cmd_vel_pub.publish(msg)
+        self.publish_cmd(msg)
+
+    def publish_cmd(self, msg: TwistStamped) -> bool:
+        if not rclpy.ok():
+            return False
+
+        try:
+            self.cmd_vel_pub.publish(msg)
+            return True
+        except Exception as exc:
+            if rclpy.ok():
+                self.get_logger().warn(
+                    f"Unable to publish velocity command: {exc}"
+                )
+            return False
 
     # Helper method to find a specific AprilTag detection by its ID from the latest detections published.
     def find_detection_by_id(self, tag_id: int):
@@ -278,10 +307,7 @@ class AlignToAprilTagServer(Node):
             self.publish_angular_velocity(angular_z)
             time.sleep(sleep_time)
 
-        # rclpy is no longer ok, ROS shut down
-        self.stop_robot()
-        goal_handle.abort()
-
+        # rclpy is no longer ok, ROS is shutting down.
         result.success = False
         result.message = "ROS shutdown during alignment."
         return result
@@ -298,13 +324,14 @@ def main(args=None):
 
     try:
         executor.spin()
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
-        node.stop_robot()
+        if rclpy.ok():
+            node.stop_robot()
         executor.shutdown()
         node.destroy_node()
-        rclpy.shutdown()
+        shutdown_rclpy_if_needed()
 
 
 if __name__ == "__main__":

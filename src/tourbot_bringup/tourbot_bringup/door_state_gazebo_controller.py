@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from typing import Dict
 
 import rclpy
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from std_msgs.msg import Bool
 
@@ -78,6 +79,14 @@ DOOR_SPECS: Dict[int, DoorSpec] = {
         panel_open=PoseSpec(1.35, 0.89, 0.42, qz=0.70710678, qw=0.70710678),
     ),
 }
+
+
+def shutdown_rclpy_if_needed() -> None:
+    try:
+        if rclpy.ok():
+            rclpy.shutdown()
+    except Exception:
+        pass
 
 
 class DoorStateGazeboController(Node):
@@ -177,11 +186,11 @@ def main(args=None) -> None:
 
     try:
         rclpy.spin(node)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        shutdown_rclpy_if_needed()
 
 
 if __name__ == "__main__":

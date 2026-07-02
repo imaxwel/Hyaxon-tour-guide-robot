@@ -3,6 +3,7 @@
 from lifecycle_msgs.msg import State, Transition
 from lifecycle_msgs.srv import ChangeState, GetState
 import rclpy
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from tf2_ros import Buffer, TransformException, TransformListener
 
@@ -205,14 +206,24 @@ class Nav2PostLocalizationActivator(Node):
         self.get_logger().warning(f'{node_name}: {message}; retry {retries}')
 
 
+def shutdown_rclpy_if_needed():
+    try:
+        if rclpy.ok():
+            rclpy.shutdown()
+    except Exception:
+        pass
+
+
 def main(args=None):
     rclpy.init(args=args)
     node = Nav2PostLocalizationActivator()
     try:
         rclpy.spin(node)
+    except (KeyboardInterrupt, ExternalShutdownException):
+        pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        shutdown_rclpy_if_needed()
 
 
 if __name__ == '__main__':

@@ -7,7 +7,7 @@ from apriltag_msgs.msg import AprilTagDetection, AprilTagDetectionArray, Point
 from geometry_msgs.msg import TwistStamped
 from nav_msgs.msg import Odometry
 from rclpy.action import ActionClient
-from rclpy.executors import MultiThreadedExecutor
+from rclpy.executors import ExternalShutdownException, MultiThreadedExecutor
 from rclpy.node import Node
 from sensor_msgs.msg import CameraInfo
 from std_msgs.msg import Bool
@@ -15,6 +15,14 @@ from std_msgs.msg import Bool
 from tourbot_interfaces.action import AlignToAprilTag
 from tourbot_interfaces.action import DoorTraverse
 from tourbot_interfaces.action import WaitForTagRemoved
+
+
+def shutdown_rclpy_if_needed() -> None:
+    try:
+        if rclpy.ok():
+            rclpy.shutdown()
+    except Exception:
+        pass
 
 
 class DoorAprilTagDemoNode(Node):
@@ -482,9 +490,9 @@ def main(args=None) -> None:
 
     try:
         executor.spin()
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
         executor.shutdown()
         node.destroy_node()
-        rclpy.shutdown()
+        shutdown_rclpy_if_needed()

@@ -5,7 +5,7 @@ from typing import Optional, Tuple
 import rclpy
 from rclpy.action import ActionServer, CancelResponse, GoalResponse
 from rclpy.callback_groups import ReentrantCallbackGroup
-from rclpy.executors import MultiThreadedExecutor
+from rclpy.executors import ExternalShutdownException, MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy
 
@@ -16,6 +16,15 @@ from tourbot_interfaces.action import DoorTraverse
 
 
 TURN_SPEED_DEFAULT = 0.1
+
+
+def shutdown_rclpy_if_needed() -> None:
+    try:
+        if rclpy.ok():
+            rclpy.shutdown()
+    except Exception:
+        pass
+
 
 # TODO: Add beeping sound while navigating the door. 
 
@@ -266,9 +275,13 @@ class DoorBehaviorServer(Node):
         goal_handle.publish_feedback(feedback)
 
     def stop_robot(self) -> None:
+        if not rclpy.ok():
+            return
+
         for index in range(self.stop_command_repeats):
             msg = self.make_twist_stamped()
-            self.cmd_pub.publish(msg)
+            if not self.publish_cmd(msg):
+                return
             if (
                 index + 1 < self.stop_command_repeats
                 and self.stop_command_period_sec > 0.0
@@ -276,15 +289,35 @@ class DoorBehaviorServer(Node):
                 time.sleep(self.stop_command_period_sec)
 
     def set_linear_velocity(self, speed: float) -> None:
+        if not rclpy.ok():
+            return
+
         msg = self.make_twist_stamped()
         msg.twist.linear.x = float(speed)
-        self.cmd_pub.publish(msg)
+        self.publish_cmd(msg)
 
     def set_angular_velocity(self, speed: float) -> None:
+        if not rclpy.ok():
+            return
+
         msg = self.make_twist_stamped()
         msg.twist.linear.x = 0.0
         msg.twist.angular.z = float(speed)
-        self.cmd_pub.publish(msg)
+        self.publish_cmd(msg)
+
+    def publish_cmd(self, msg: TwistStamped) -> bool:
+        if not rclpy.ok():
+            return False
+
+        try:
+            self.cmd_pub.publish(msg)
+            return True
+        except Exception as exc:
+            if rclpy.ok():
+                self.get_logger().warn(
+                    f"Unable to publish velocity command: {exc}"
+                )
+            return False
 
     def get_xy(self) -> Optional[Tuple[float, float]]:
         if self.current_odom is None:
@@ -366,12 +399,22 @@ class DoorBehaviorServer(Node):
 
     def make_failed_result(self, goal_handle, message: str):
         self.stop_robot()
-        goal_handle.abort()
+        self.abort_goal(goal_handle)
 
         result = DoorTraverse.Result()
         result.success = False
         result.message = message
         return result
+
+    def abort_goal(self, goal_handle) -> None:
+        if not rclpy.ok():
+            return
+
+        try:
+            goal_handle.abort()
+        except Exception as exc:
+            if rclpy.ok():
+                self.get_logger().warn(f"Unable to abort goal: {exc}")
 
     def wait_with_cancel(
         self,
@@ -677,7 +720,7 @@ class DoorBehaviorServer(Node):
         except Exception as exc:
             self.stop_robot()
             self.get_logger().error(f"Exception in door traversal: {exc}")
-            goal_handle.abort()
+            self.abort_goal(goal_handle)
 
             result = DoorTraverse.Result()
             result.success = False
@@ -695,13 +738,14 @@ def main(args=None) -> None:
 
     try:
         executor.spin()
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
-        node.stop_robot()
+        if rclpy.ok():
+            node.stop_robot()
         executor.shutdown()
         node.destroy_node()
-        rclpy.shutdown()
+        shutdown_rclpy_if_needed()
 
 
 if __name__ == "__main__":
